@@ -1,18 +1,14 @@
 # opencv-visual-assert
 
-Libreria Maven riusabile per confronti visuali con OpenCV.
+Libreria Maven per confronti visuali basati su OpenCV.
 
-La libreria riceve immagini gia' prodotte dal framework chiamante e restituisce un risultato strutturato. Non apre browser, non esegue test e non dipende dal runner del progetto chiamante.
+## Scope
+
+La libreria riceve immagini gia' prodotte dal progetto chiamante e restituisce risultati strutturati. Non apre browser, non esegue test e non dipende da runner o framework E2E.
 
 ## Baseline
 
-La convenzione predefinita per le baseline e':
-
-```text
-src/test/resources/visual_img
-```
-
-Sono supportati anche questi percorsi:
+Directory baseline supportate:
 
 ```text
 visual_img
@@ -20,7 +16,7 @@ resources/test/visual_img
 src/test/resources/visual_img
 ```
 
-La chiave `checkout-summary` risolve automaticamente, in ordine, file come:
+La chiave `checkout-summary` risolve automaticamente:
 
 ```text
 visual_img/checkout-summary.png
@@ -68,10 +64,10 @@ TemplateMatchResult result = OpenCvVision.findTemplateInScreenshotBytes(
 
 ## Output
 
-Gli artefatti vengono scritti di default in:
+Directory output predefinita:
 
 ```text
 target/visual-assert
 ```
 
-Il progetto chiamante decide come usare `passed()`, `found()`, `failureMessage()` e i path generati.
+Il progetto chiamante gestisce `passed()`, `found()`, `failureMessage()` e i path degli artifact.

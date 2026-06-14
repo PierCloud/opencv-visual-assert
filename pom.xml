@@ -10,7 +10,7 @@
     <packaging>jar</packaging>
 
     <name>opencv-visual-assert</name>
-    <description>Reusable OpenCV visual assertion library.</description>
+    <description>OpenCV visual assertion library.</description>
 
     <properties>
         <java.version>17</java.version>
