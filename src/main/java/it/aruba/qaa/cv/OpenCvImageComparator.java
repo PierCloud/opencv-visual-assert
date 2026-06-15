@@ -59,17 +59,9 @@ final class OpenCvImageComparator {
         String note = "";
         if (actual.cols() != expected.cols() || actual.rows() != expected.rows()) {
             note = "Image size mismatch. Expected " + expected.cols() + "x" + expected.rows()
-                    + ", actual " + actual.cols() + "x" + actual.rows() + ". ";
-            if (isSmallSizeMismatch(expected, actual)) {
-                actual = resizeTo(actual, expected.cols(), expected.rows());
-                note += "Diff uses the actual image normalized to baseline size.";
-            } else {
-                int compareWidth = Math.max(actual.cols(), expected.cols());
-                int compareHeight = Math.max(actual.rows(), expected.rows());
-                actual = padToSize(actual, compareWidth, compareHeight);
-                expected = padToSize(expected, compareWidth, compareHeight);
-                note += "Diff uses a common padded canvas.";
-            }
+                    + ", actual " + actual.cols() + "x" + actual.rows()
+                    + ". Diff uses the actual image normalized to baseline size.";
+            actual = resizeTo(actual, expected.cols(), expected.rows());
         }
 
         Mat delta = new Mat();
@@ -160,23 +152,6 @@ final class OpenCvImageComparator {
             ignoredPixels += region.clippedArea(mask.cols(), mask.rows());
         }
         return ignoredPixels;
-    }
-
-    private static Mat padToSize(Mat image, int width, int height) {
-        if (image.cols() == width && image.rows() == height) {
-            return image;
-        }
-
-        Mat padded = new Mat(height, width, image.type(), new Scalar(255.0, 255.0, 255.0, 0.0));
-        Mat target = new Mat(padded, new Rect(0, 0, image.cols(), image.rows()));
-        image.copyTo(target);
-        return padded;
-    }
-
-    private static boolean isSmallSizeMismatch(Mat expected, Mat actual) {
-        double widthDelta = Math.abs(expected.cols() - actual.cols()) / (double) expected.cols();
-        double heightDelta = Math.abs(expected.rows() - actual.rows()) / (double) expected.rows();
-        return widthDelta <= 0.05 && heightDelta <= 0.05;
     }
 
     private static Mat resizeTo(Mat image, int width, int height) {
