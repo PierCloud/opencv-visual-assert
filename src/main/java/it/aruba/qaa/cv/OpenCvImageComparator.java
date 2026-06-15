@@ -40,11 +40,16 @@ final class OpenCvImageComparator {
         Mat actual = normalizeToBgr(decodeImage(actualImageBytes, "actual screenshot"));
         Mat expected = normalizeToBgr(decodeImage(expectedImageBytes, "baseline image"));
 
+        Path expectedPath = options.outputDirectory().resolve(options.artifactName() + "-expected.png");
         Path actualPath = options.outputDirectory().resolve(options.artifactName() + "-actual.png");
         Path diffPath = options.outputDirectory().resolve(options.artifactName() + "-diff.png");
+        Path reportPath = options.outputDirectory().resolve(options.artifactName() + "-report.html");
 
         ensureOutputDirectory(options.outputDirectory());
 
+        if (options.writeExpectedImage()) {
+            writePng(expected, expectedPath);
+        }
         if (options.writeActualImage()) {
             writePng(actual, actualPath);
         }
@@ -55,7 +60,7 @@ final class OpenCvImageComparator {
                     -1,
                     -1,
                     100.0,
-                    expectedDisplayPath,
+                    options.writeExpectedImage() ? expectedPath : expectedDisplayPath,
                     optionalPath(options.writeActualImage(), actualPath),
                     Optional.empty(),
                     "Image size mismatch. Expected " + expected.cols() + "x" + expected.rows()
@@ -82,13 +87,26 @@ final class OpenCvImageComparator {
         }
 
         boolean passed = diffPixels <= options.maxDiffPixels() || diffPercent <= options.maxDiffPercent();
+        if (options.writeHtmlReport()) {
+            writeHtmlReport(
+                    reportPath,
+                    optionalPath(options.writeExpectedImage(), expectedPath),
+                    optionalPath(options.writeActualImage(), actualPath),
+                    optionalPath(options.writeDiffImage(), diffPath),
+                    diffPixels,
+                    comparedPixels,
+                    diffPercent,
+                    passed,
+                    options
+            );
+        }
 
         return new VisualCompareResult(
                 passed,
                 diffPixels,
                 comparedPixels,
                 diffPercent,
-                expectedDisplayPath,
+                options.writeExpectedImage() ? expectedPath : expectedDisplayPath,
                 optionalPath(options.writeActualImage(), actualPath),
                 optionalPath(options.writeDiffImage(), diffPath),
                 "Allowed maxDiffPercent=" + options.maxDiffPercent()
@@ -157,6 +175,93 @@ final class OpenCvImageComparator {
             diffIndexer.release();
         }
         writePng(diff, diffPath);
+    }
+
+    private static void writeHtmlReport(
+            Path reportPath,
+            Optional<Path> expectedPath,
+            Optional<Path> actualPath,
+            Optional<Path> diffPath,
+            long diffPixels,
+            long comparedPixels,
+            double diffPercent,
+            boolean passed,
+            VisualCompareOptions options
+    ) {
+        String html = """
+                <!doctype html>
+                <html lang="en">
+                <head>
+                    <meta charset="utf-8">
+                    <title>Visual comparison report</title>
+                    <style>
+                        body { font-family: Arial, sans-serif; margin: 24px; color: #1f2937; }
+                        h1 { margin-bottom: 8px; }
+                        .status { font-weight: 700; color: %s; }
+                        .summary { display: grid; grid-template-columns: 180px 1fr; gap: 8px 16px; margin: 16px 0 24px; }
+                        .summary dt { font-weight: 700; }
+                        .summary dd { margin: 0; font-family: Consolas, monospace; }
+                        .grid { display: grid; grid-template-columns: repeat(3, minmax(260px, 1fr)); gap: 16px; align-items: start; }
+                        figure { margin: 0; border: 1px solid #d1d5db; padding: 12px; }
+                        figcaption { font-weight: 700; margin-bottom: 8px; }
+                        img { max-width: 100%%; display: block; border: 1px solid #e5e7eb; }
+                    </style>
+                </head>
+                <body>
+                    <h1>Visual comparison report</h1>
+                    <div class="status">%s</div>
+                    <dl class="summary">
+                        <dt>Artifact</dt><dd>%s</dd>
+                        <dt>Diff pixels</dt><dd>%d</dd>
+                        <dt>Compared pixels</dt><dd>%d</dd>
+                        <dt>Diff percent</dt><dd>%.6f</dd>
+                        <dt>Max diff percent</dt><dd>%.6f</dd>
+                        <dt>Pixel tolerance</dt><dd>%d</dd>
+                    </dl>
+                    <section class="grid">
+                        %s
+                        %s
+                        %s
+                    </section>
+                </body>
+                </html>
+                """.formatted(
+                passed ? "#047857" : "#b91c1c",
+                passed ? "PASSED" : "FAILED",
+                escape(options.artifactName()),
+                diffPixels,
+                comparedPixels,
+                diffPercent,
+                options.maxDiffPercent(),
+                options.pixelTolerance(),
+                imageFigure("Baseline", expectedPath),
+                imageFigure("Actual", actualPath),
+                imageFigure("Diff", diffPath)
+        );
+
+        try {
+            ensureOutputDirectory(reportPath.getParent());
+            Files.writeString(reportPath, html);
+        } catch (IOException e) {
+            throw new VisualAssertException("Unable to write visual report: " + reportPath, e);
+        }
+    }
+
+    private static String imageFigure(String title, Optional<Path> path) {
+        return path.map(value -> """
+                <figure>
+                    <figcaption>%s</figcaption>
+                    <img src="%s" alt="%s">
+                </figure>
+                """.formatted(escape(title), escape(value.getFileName().toString()), escape(title))).orElse("");
+    }
+
+    private static String escape(String value) {
+        return value
+                .replace("&", "&amp;")
+                .replace("<", "&lt;")
+                .replace(">", "&gt;")
+                .replace("\"", "&quot;");
     }
 
     private static void writePng(Mat image, Path outputPath) {

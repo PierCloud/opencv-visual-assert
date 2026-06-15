@@ -15,6 +15,8 @@ public final class VisualCompareOptions {
     private final int pixelTolerance;
     private final boolean writeActualImage;
     private final boolean writeDiffImage;
+    private final boolean writeExpectedImage;
+    private final boolean writeHtmlReport;
     private final List<VisualRegion> ignoredRegions;
 
     private VisualCompareOptions(Builder builder) {
@@ -25,6 +27,8 @@ public final class VisualCompareOptions {
         this.pixelTolerance = builder.pixelTolerance;
         this.writeActualImage = builder.writeActualImage;
         this.writeDiffImage = builder.writeDiffImage;
+        this.writeExpectedImage = builder.writeExpectedImage;
+        this.writeHtmlReport = builder.writeHtmlReport;
         this.ignoredRegions = Collections.unmodifiableList(new ArrayList<>(builder.ignoredRegions));
     }
 
@@ -60,6 +64,14 @@ public final class VisualCompareOptions {
         return writeDiffImage;
     }
 
+    public boolean writeExpectedImage() {
+        return writeExpectedImage;
+    }
+
+    public boolean writeHtmlReport() {
+        return writeHtmlReport;
+    }
+
     public List<VisualRegion> ignoredRegions() {
         return ignoredRegions;
     }
@@ -72,6 +84,8 @@ public final class VisualCompareOptions {
         private int pixelTolerance = 0;
         private boolean writeActualImage = true;
         private boolean writeDiffImage = true;
+        private boolean writeExpectedImage = true;
+        private boolean writeHtmlReport = true;
         private final List<VisualRegion> ignoredRegions = new ArrayList<>();
 
         private Builder() {
@@ -118,6 +132,16 @@ public final class VisualCompareOptions {
 
         public Builder writeDiffImage(boolean writeDiffImage) {
             this.writeDiffImage = writeDiffImage;
+            return this;
+        }
+
+        public Builder writeExpectedImage(boolean writeExpectedImage) {
+            this.writeExpectedImage = writeExpectedImage;
+            return this;
+        }
+
+        public Builder writeHtmlReport(boolean writeHtmlReport) {
+            this.writeHtmlReport = writeHtmlReport;
             return this;
         }
 

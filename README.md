@@ -110,11 +110,15 @@ target/visual-assert
 Artifact:
 
 ```text
+<artifactName>-expected.png
 <artifactName>-actual.png
 <artifactName>-diff.png
+<artifactName>-report.html
 ```
 
 Il progetto chiamante gestisce `passed()`, `failureMessage()` e i path degli artifact.
+
+Il file `*-diff.png` evidenzia in rosso i pixel differenti. Il file `*-report.html` mostra baseline, actual e diff affiancati con riepilogo numerico.
 
 ## Template Matching
 
@@ -144,6 +148,7 @@ VisualCompareOptions options = VisualCompareOptions.builder()
         .artifactName("checkout-summary")
         .maxDiffPercent(0.25)
         .pixelTolerance(12)
+        .writeHtmlReport(true)
         .build();
 ```
 
