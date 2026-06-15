@@ -54,33 +54,15 @@ final class OpenCvImageComparator {
             writePng(actual, actualPath);
         }
 
+        String note = "";
         if (actual.cols() != expected.cols() || actual.rows() != expected.rows()) {
-            String mismatchMessage = "Image size mismatch. Expected " + expected.cols() + "x" + expected.rows()
-                    + ", actual " + actual.cols() + "x" + actual.rows();
-            if (options.writeHtmlReport()) {
-                writeHtmlReport(
-                        reportPath,
-                        optionalPath(options.writeExpectedImage(), expectedPath),
-                        optionalPath(options.writeActualImage(), actualPath),
-                        Optional.empty(),
-                        -1,
-                        -1,
-                        100.0,
-                        false,
-                        options,
-                        mismatchMessage
-                );
-            }
-            return new VisualCompareResult(
-                    false,
-                    -1,
-                    -1,
-                    100.0,
-                    options.writeExpectedImage() ? expectedPath : expectedDisplayPath,
-                    optionalPath(options.writeActualImage(), actualPath),
-                    Optional.empty(),
-                    mismatchMessage
-            );
+            note = "Image size mismatch. Expected " + expected.cols() + "x" + expected.rows()
+                    + ", actual " + actual.cols() + "x" + actual.rows()
+                    + ". Diff uses a common padded canvas.";
+            int compareWidth = Math.max(actual.cols(), expected.cols());
+            int compareHeight = Math.max(actual.rows(), expected.rows());
+            actual = padToSize(actual, compareWidth, compareHeight);
+            expected = padToSize(expected, compareWidth, compareHeight);
         }
 
         Mat delta = new Mat();
@@ -113,7 +95,7 @@ final class OpenCvImageComparator {
                     diffPercent,
                     passed,
                     options,
-                    ""
+                    note
             );
         }
 
@@ -125,7 +107,8 @@ final class OpenCvImageComparator {
                 options.writeExpectedImage() ? expectedPath : expectedDisplayPath,
                 optionalPath(options.writeActualImage(), actualPath),
                 optionalPath(options.writeDiffImage(), diffPath),
-                "Allowed maxDiffPercent=" + options.maxDiffPercent()
+                (note.isBlank() ? "" : note + " ")
+                        + "Allowed maxDiffPercent=" + options.maxDiffPercent()
                         + ", maxDiffPixels=" + options.maxDiffPixels()
                         + ", pixelTolerance=" + options.pixelTolerance()
         );
@@ -170,6 +153,17 @@ final class OpenCvImageComparator {
             ignoredPixels += region.clippedArea(mask.cols(), mask.rows());
         }
         return ignoredPixels;
+    }
+
+    private static Mat padToSize(Mat image, int width, int height) {
+        if (image.cols() == width && image.rows() == height) {
+            return image;
+        }
+
+        Mat padded = new Mat(height, width, image.type(), new Scalar(255.0, 255.0, 255.0, 0.0));
+        Mat target = new Mat(padded, new Rect(0, 0, image.cols(), image.rows()));
+        image.copyTo(target);
+        return padded;
     }
 
     private static void writeDiffImage(Mat actual, Mat mask, Path diffPath) {
