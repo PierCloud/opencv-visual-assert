@@ -5,6 +5,7 @@ import org.bytedeco.javacpp.indexer.UByteIndexer;
 import org.bytedeco.opencv.opencv_core.Mat;
 import org.bytedeco.opencv.opencv_core.Rect;
 import org.bytedeco.opencv.opencv_core.Scalar;
+import org.bytedeco.opencv.opencv_core.Size;
 
 import java.io.IOException;
 import java.nio.file.Files;
@@ -23,6 +24,7 @@ import static org.bytedeco.opencv.global.opencv_imgproc.COLOR_BGR2GRAY;
 import static org.bytedeco.opencv.global.opencv_imgproc.LINE_8;
 import static org.bytedeco.opencv.global.opencv_imgproc.THRESH_BINARY;
 import static org.bytedeco.opencv.global.opencv_imgproc.cvtColor;
+import static org.bytedeco.opencv.global.opencv_imgproc.resize;
 import static org.bytedeco.opencv.global.opencv_imgproc.rectangle;
 import static org.bytedeco.opencv.global.opencv_imgproc.threshold;
 
@@ -57,12 +59,17 @@ final class OpenCvImageComparator {
         String note = "";
         if (actual.cols() != expected.cols() || actual.rows() != expected.rows()) {
             note = "Image size mismatch. Expected " + expected.cols() + "x" + expected.rows()
-                    + ", actual " + actual.cols() + "x" + actual.rows()
-                    + ". Diff uses a common padded canvas.";
-            int compareWidth = Math.max(actual.cols(), expected.cols());
-            int compareHeight = Math.max(actual.rows(), expected.rows());
-            actual = padToSize(actual, compareWidth, compareHeight);
-            expected = padToSize(expected, compareWidth, compareHeight);
+                    + ", actual " + actual.cols() + "x" + actual.rows() + ". ";
+            if (isSmallSizeMismatch(expected, actual)) {
+                actual = resizeTo(actual, expected.cols(), expected.rows());
+                note += "Diff uses the actual image normalized to baseline size.";
+            } else {
+                int compareWidth = Math.max(actual.cols(), expected.cols());
+                int compareHeight = Math.max(actual.rows(), expected.rows());
+                actual = padToSize(actual, compareWidth, compareHeight);
+                expected = padToSize(expected, compareWidth, compareHeight);
+                note += "Diff uses a common padded canvas.";
+            }
         }
 
         Mat delta = new Mat();
@@ -164,6 +171,18 @@ final class OpenCvImageComparator {
         Mat target = new Mat(padded, new Rect(0, 0, image.cols(), image.rows()));
         image.copyTo(target);
         return padded;
+    }
+
+    private static boolean isSmallSizeMismatch(Mat expected, Mat actual) {
+        double widthDelta = Math.abs(expected.cols() - actual.cols()) / (double) expected.cols();
+        double heightDelta = Math.abs(expected.rows() - actual.rows()) / (double) expected.rows();
+        return widthDelta <= 0.05 && heightDelta <= 0.05;
+    }
+
+    private static Mat resizeTo(Mat image, int width, int height) {
+        Mat resized = new Mat();
+        resize(image, resized, new Size(width, height));
+        return resized;
     }
 
     private static void writeDiffImage(Mat actual, Mat mask, Path diffPath) {
