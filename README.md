@@ -23,6 +23,7 @@ Directory baseline supportate:
 
 ```text
 cv_img
+test/cv_img
 resources/test/cv_img
 Resources/test/cv_img
 src/test/resources/cv_img
@@ -46,6 +47,7 @@ La chiave `checkout-summary` risolve automaticamente:
 cv_img/checkout-summary.png
 cv_img/checkout-summary.jpg
 cv_img/checkout-summary.jpeg
+test/cv_img/checkout-summary.png
 resources/test/cv_img/checkout-summary.png
 Resources/test/cv_img/checkout-summary.png
 src/test/resources/cv_img/checkout-summary.png
