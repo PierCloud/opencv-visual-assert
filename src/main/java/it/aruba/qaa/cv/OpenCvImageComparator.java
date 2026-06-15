@@ -15,7 +15,6 @@ import java.util.Optional;
 import static org.bytedeco.opencv.global.opencv_core.CV_8UC1;
 import static org.bytedeco.opencv.global.opencv_core.absdiff;
 import static org.bytedeco.opencv.global.opencv_core.countNonZero;
-import static org.bytedeco.opencv.global.opencv_core.mean;
 import static org.bytedeco.opencv.global.opencv_imgcodecs.IMREAD_UNCHANGED;
 import static org.bytedeco.opencv.global.opencv_imgcodecs.imdecode;
 import static org.bytedeco.opencv.global.opencv_imgcodecs.imencode;
@@ -24,11 +23,9 @@ import static org.bytedeco.opencv.global.opencv_imgproc.COLOR_GRAY2BGR;
 import static org.bytedeco.opencv.global.opencv_imgproc.COLOR_BGR2GRAY;
 import static org.bytedeco.opencv.global.opencv_imgproc.GaussianBlur;
 import static org.bytedeco.opencv.global.opencv_imgproc.LINE_8;
-import static org.bytedeco.opencv.global.opencv_imgproc.THRESH_BINARY;
 import static org.bytedeco.opencv.global.opencv_imgproc.cvtColor;
 import static org.bytedeco.opencv.global.opencv_imgproc.resize;
 import static org.bytedeco.opencv.global.opencv_imgproc.rectangle;
-import static org.bytedeco.opencv.global.opencv_imgproc.threshold;
 
 final class OpenCvImageComparator {
 
@@ -63,23 +60,15 @@ final class OpenCvImageComparator {
             actual = resizeTo(actual, expected.cols(), expected.rows());
         }
 
-        AlignmentOffset alignmentOffset = findBestAlignment(expected, actual);
-        if (!alignmentOffset.isZero()) {
-            actual = shiftToSize(actual, expected.cols(), expected.rows(), alignmentOffset);
-            note += (note.isBlank() ? "" : " ")
-                    + "Actual image aligned by dx=" + alignmentOffset.dx()
-                    + ", dy=" + alignmentOffset.dy() + " before diff.";
-        }
-
         if (options.writeActualImage()) {
             writePng(actual, actualPath);
         }
 
-        int effectivePixelTolerance = Math.max(options.pixelTolerance(), 24);
+        int effectivePixelTolerance = Math.max(options.pixelTolerance(), 32);
         if (effectivePixelTolerance != options.pixelTolerance()) {
             note += (note.isBlank() ? "" : " ")
                     + "Effective pixel tolerance raised to " + effectivePixelTolerance
-                    + " to reduce rendering noise.";
+                    + " for perceptual comparison.";
         }
 
         Mat delta = new Mat();
@@ -88,8 +77,7 @@ final class OpenCvImageComparator {
         Mat gray = new Mat();
         cvtColor(delta, gray, COLOR_BGR2GRAY);
 
-        Mat mask = new Mat();
-        threshold(gray, mask, effectivePixelTolerance, 255, THRESH_BINARY);
+        Mat mask = buildPerceptualMask(gray, effectivePixelTolerance);
 
         long ignoredPixels = applyIgnoredRegions(mask, options);
         int minimumComponentArea = minimumSignificantComponentArea(mask);
@@ -272,78 +260,76 @@ final class OpenCvImageComparator {
         return tail;
     }
 
+    private static Mat buildPerceptualMask(Mat grayDelta, int effectivePixelTolerance) {
+        int rows = grayDelta.rows();
+        int cols = grayDelta.cols();
+        int blockSize = Math.max(24, Math.min(64, Math.min(rows, cols) / 35));
+        Mat mask = new Mat(rows, cols, CV_8UC1, new Scalar(0.0));
+
+        UByteIndexer deltaIndexer = grayDelta.createIndexer();
+        UByteIndexer maskIndexer = mask.createIndexer();
+        try {
+            for (int y = 0; y < rows; y += blockSize) {
+                for (int x = 0; x < cols; x += blockSize) {
+                    int width = Math.min(blockSize, cols - x);
+                    int height = Math.min(blockSize, rows - y);
+                    if (isSignificantBlock(deltaIndexer, x, y, width, height, effectivePixelTolerance)) {
+                        fillBlock(maskIndexer, x, y, width, height);
+                    }
+                }
+            }
+        } finally {
+            deltaIndexer.release();
+            maskIndexer.release();
+        }
+
+        return mask;
+    }
+
+    private static boolean isSignificantBlock(
+            UByteIndexer deltaIndexer,
+            int startX,
+            int startY,
+            int width,
+            int height,
+            int effectivePixelTolerance
+    ) {
+        long totalDelta = 0;
+        int strongPixels = 0;
+        int pixels = width * height;
+
+        for (int y = startY; y < startY + height; y++) {
+            for (int x = startX; x < startX + width; x++) {
+                int value = deltaIndexer.get(y, x);
+                totalDelta += value;
+                if (value >= effectivePixelTolerance) {
+                    strongPixels++;
+                }
+            }
+        }
+
+        double averageDelta = totalDelta / (double) pixels;
+        double strongRatio = strongPixels / (double) pixels;
+        return averageDelta >= 10.0 && strongRatio >= 0.10;
+    }
+
+    private static void fillBlock(UByteIndexer maskIndexer, int startX, int startY, int width, int height) {
+        for (int y = startY; y < startY + height; y++) {
+            for (int x = startX; x < startX + width; x++) {
+                maskIndexer.put(y, x, 255);
+            }
+        }
+    }
+
     private static Mat resizeTo(Mat image, int width, int height) {
         Mat resized = new Mat();
         resize(image, resized, new Size(width, height));
         return resized;
     }
 
-    private static AlignmentOffset findBestAlignment(Mat expected, Mat actual) {
-        int maxOffset = Math.max(2, Math.min(24, Math.min(expected.cols(), expected.rows()) / 80));
-        Mat expectedGray = toGray(resizeTo(expected, Math.max(1, expected.cols() / 4), Math.max(1, expected.rows() / 4)));
-        Mat actualGray = toGray(resizeTo(actual, Math.max(1, actual.cols() / 4), Math.max(1, actual.rows() / 4)));
-        int scaledMaxOffset = Math.max(1, maxOffset / 4);
-
-        AlignmentOffset bestOffset = new AlignmentOffset(0, 0);
-        double bestScore = Double.MAX_VALUE;
-        for (int dy = -scaledMaxOffset; dy <= scaledMaxOffset; dy++) {
-            for (int dx = -scaledMaxOffset; dx <= scaledMaxOffset; dx++) {
-                double score = alignmentScore(expectedGray, actualGray, dx, dy);
-                if (score < bestScore) {
-                    bestScore = score;
-                    bestOffset = new AlignmentOffset(dx * 4, dy * 4);
-                }
-            }
-        }
-        return bestOffset;
-    }
-
-    private static double alignmentScore(Mat expected, Mat actual, int dx, int dy) {
-        int expectedX = Math.max(0, dx);
-        int actualX = Math.max(0, -dx);
-        int expectedY = Math.max(0, dy);
-        int actualY = Math.max(0, -dy);
-        int width = Math.min(expected.cols() - expectedX, actual.cols() - actualX);
-        int height = Math.min(expected.rows() - expectedY, actual.rows() - actualY);
-        if (width <= 0 || height <= 0) {
-            return Double.MAX_VALUE;
-        }
-
-        Mat expectedRoi = new Mat(expected, new Rect(expectedX, expectedY, width, height));
-        Mat actualRoi = new Mat(actual, new Rect(actualX, actualY, width, height));
-        Mat delta = new Mat();
-        absdiff(expectedRoi, actualRoi, delta);
-        return mean(delta).get(0);
-    }
-
-    private static Mat shiftToSize(Mat image, int width, int height, AlignmentOffset offset) {
-        Mat shifted = new Mat(height, width, image.type(), new Scalar(255.0, 255.0, 255.0, 0.0));
-
-        int sourceX = Math.max(0, -offset.dx());
-        int sourceY = Math.max(0, -offset.dy());
-        int targetX = Math.max(0, offset.dx());
-        int targetY = Math.max(0, offset.dy());
-        int copyWidth = Math.min(image.cols() - sourceX, width - targetX);
-        int copyHeight = Math.min(image.rows() - sourceY, height - targetY);
-        if (copyWidth <= 0 || copyHeight <= 0) {
-            return shifted;
-        }
-
-        Mat source = new Mat(image, new Rect(sourceX, sourceY, copyWidth, copyHeight));
-        Mat target = new Mat(shifted, new Rect(targetX, targetY, copyWidth, copyHeight));
-        source.copyTo(target);
-        return shifted;
-    }
-
-    private static Mat toGray(Mat image) {
-        Mat gray = new Mat();
-        cvtColor(image, gray, COLOR_BGR2GRAY);
-        return gray;
-    }
-
     private static Mat blurForDiff(Mat image) {
         Mat blurred = new Mat();
-        GaussianBlur(image, blurred, new Size(3, 3), 0.0);
+        GaussianBlur(image, blurred, new Size(5, 5), 0.0);
         return blurred;
     }
 
@@ -492,11 +478,5 @@ final class OpenCvImageComparator {
 
     private static Optional<Path> optionalPath(boolean enabled, Path path) {
         return enabled ? Optional.of(path) : Optional.empty();
-    }
-
-    private record AlignmentOffset(int dx, int dy) {
-        boolean isZero() {
-            return dx == 0 && dy == 0;
-        }
     }
 }
