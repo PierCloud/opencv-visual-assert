@@ -45,19 +45,16 @@ test/cv_img/checkout-summary.jpg
 test/cv_img/checkout-summary.jpeg
 ```
 
-## Uso Con Selenium
+## Uso
 
-Il test Selenium naviga normalmente fino alla pagina, poi passa alla libreria lo screenshot prodotto dal driver.
+Il progetto chiamante produce lo screenshot e passa alla libreria i bytes dell'immagine.
 
 ```java
 import it.aruba.qaa.cv.VisualAssert;
 import it.aruba.qaa.cv.VisualCompareOptions;
 import it.aruba.qaa.cv.VisualCompareResult;
-import org.openqa.selenium.OutputType;
-import org.openqa.selenium.TakesScreenshot;
-import org.openqa.selenium.WebDriver;
 
-byte[] screenshotBytes = ((TakesScreenshot) driver).getScreenshotAs(OutputType.BYTES);
+byte[] screenshotBytes = captureScreenshotBytes();
 
 VisualCompareResult result = VisualAssert.compareScreenshotBytes(
         screenshotBytes,
@@ -74,26 +71,31 @@ if (!result.passed()) {
 }
 ```
 
-Con AssertJ:
+Per salvare una baseline:
 
 ```java
-assertThat(result.passed())
-        .as(result.failureMessage())
-        .isTrue();
+import it.aruba.qaa.cv.VisualAssertUtil;
+
+byte[] screenshotBytes = captureScreenshotBytes();
+VisualAssertUtil.saveBaselineScreenshot(screenshotBytes, "access-hed-page");
 ```
 
-Con TestNG:
+Per confrontare usando le opzioni predefinite della utility:
 
 ```java
-Assert.assertTrue(result.passed(), result.failureMessage());
+import it.aruba.qaa.cv.VisualAssertUtil;
+import it.aruba.qaa.cv.VisualCompareResult;
+
+byte[] screenshotBytes = captureScreenshotBytes();
+VisualCompareResult result = VisualAssertUtil.compareScreenshot(screenshotBytes, "access-hed-page");
 ```
 
 ## Flusso E2E
 
 ```text
-1. Selenium apre la pagina
+1. il progetto chiamante porta la UI nello stato da verificare
 2. il test aspetta che la UI sia stabile
-3. Selenium produce lo screenshot
+3. il progetto chiamante produce lo screenshot
 4. opencv-visual-assert carica la baseline da test/cv_img
 5. OpenCV confronta baseline e screenshot
 6. il test fallisce se la differenza supera le soglie configurate
