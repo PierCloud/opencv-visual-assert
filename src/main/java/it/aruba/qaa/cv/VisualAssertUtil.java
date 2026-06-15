@@ -1,6 +1,7 @@
 package it.aruba.qaa.cv;
 
 import java.io.IOException;
+import java.nio.file.DirectoryStream;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.Objects;
@@ -28,6 +29,9 @@ public final class VisualAssertUtil {
         try {
             Files.createDirectories(outputPath.getParent());
             Files.write(outputPath, screenshotBytes);
+            if (!Files.isRegularFile(outputPath)) {
+                throw new VisualAssertException("Baseline screenshot was not written: " + outputPath);
+            }
             return outputPath;
         } catch (IOException e) {
             throw new VisualAssertException("Unable to save baseline screenshot for key: " + normalizedKey, e);
@@ -63,13 +67,41 @@ public final class VisualAssertUtil {
         Path current = Path.of("").toAbsolutePath().normalize();
         Path cursor = current;
         while (cursor != null) {
-            Path resourceTestDirectory = cursor.resolve(RESOURCE_TEST_DIRECTORY);
-            if (Files.isDirectory(resourceTestDirectory)) {
-                return resourceTestDirectory.resolve("cv_img");
+            Path directResourceTestDirectory = cursor.resolve(RESOURCE_TEST_DIRECTORY);
+            if (Files.isDirectory(directResourceTestDirectory)) {
+                return directResourceTestDirectory.resolve("cv_img");
+            }
+
+            Path childResourceTestDirectory = findChildResourceTestDirectory(cursor);
+            if (childResourceTestDirectory != null) {
+                return childResourceTestDirectory.resolve("cv_img");
             }
             cursor = cursor.getParent();
         }
 
         return current.resolve(BASELINE_DIRECTORY);
+    }
+
+    private static Path findChildResourceTestDirectory(Path directory) {
+        if (!Files.isDirectory(directory)) {
+            return null;
+        }
+
+        try (DirectoryStream<Path> children = Files.newDirectoryStream(directory)) {
+            for (Path child : children) {
+                if (!Files.isDirectory(child)) {
+                    continue;
+                }
+
+                Path resourceTestDirectory = child.resolve(RESOURCE_TEST_DIRECTORY);
+                if (Files.isDirectory(resourceTestDirectory)) {
+                    return resourceTestDirectory;
+                }
+            }
+        } catch (IOException e) {
+            return null;
+        }
+
+        return null;
     }
 }
