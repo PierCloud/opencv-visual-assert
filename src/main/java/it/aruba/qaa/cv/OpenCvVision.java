@@ -1,4 +1,4 @@
-package io.senti.testing.visual;
+package it.aruba.qaa.cv;
 
 import org.bytedeco.javacpp.DoublePointer;
 import org.bytedeco.opencv.opencv_core.Mat;

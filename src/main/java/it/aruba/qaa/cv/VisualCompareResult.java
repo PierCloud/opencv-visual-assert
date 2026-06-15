@@ -1,4 +1,4 @@
-package io.senti.testing.visual;
+package it.aruba.qaa.cv;
 
 import java.nio.file.Path;
 import java.util.Optional;

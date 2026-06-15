@@ -1,4 +1,4 @@
-package io.senti.testing.visual;
+package it.aruba.qaa.cv;
 
 import java.io.IOException;
 import java.io.InputStream;

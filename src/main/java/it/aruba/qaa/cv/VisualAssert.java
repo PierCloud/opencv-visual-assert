@@ -1,4 +1,4 @@
-package io.senti.testing.visual;
+package it.aruba.qaa.cv;
 
 import javax.imageio.ImageIO;
 import java.awt.image.BufferedImage;

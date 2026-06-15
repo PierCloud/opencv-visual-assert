@@ -1,4 +1,4 @@
-package io.senti.testing.visual;
+package it.aruba.qaa.cv;
 
 import org.bytedeco.javacpp.BytePointer;
 import org.bytedeco.javacpp.indexer.UByteIndexer;

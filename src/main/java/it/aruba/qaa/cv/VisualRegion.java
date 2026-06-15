@@ -1,4 +1,4 @@
-package io.senti.testing.visual;
+package it.aruba.qaa.cv;
 
 public record VisualRegion(int x, int y, int width, int height) {
 
