@@ -141,81 +141,121 @@ final class OpenCvImageComparator {
             BufferedImage actual,
             int effectivePixelTolerance
     ) {
-        int width = expected.getWidth();
-        int height = expected.getHeight();
-        int blockSize = Math.max(24, Math.min(64, Math.min(width, height) / 35));
-        boolean[][] mask = new boolean[height][width];
+        int[][] expectedGray = gaussianBlur(toGray(expected));
+        int[][] actualGray = gaussianBlur(toGray(actual));
+        boolean[][] rawMask = thresholdAbsDiff(expectedGray, actualGray, effectivePixelTolerance);
+        boolean[][] closedMask = dilate(erode(dilate(rawMask)));
+        return erode(closedMask);
+    }
 
-        for (int y = 0; y < height; y += blockSize) {
-            for (int x = 0; x < width; x += blockSize) {
-                int blockWidth = Math.min(blockSize, width - x);
-                int blockHeight = Math.min(blockSize, height - y);
-                if (isSignificantBlock(expected, actual, x, y, blockWidth, blockHeight, effectivePixelTolerance)) {
-                    fillBlock(mask, x, y, blockWidth, blockHeight);
+    private static int[][] toGray(BufferedImage image) {
+        int[][] gray = new int[image.getHeight()][image.getWidth()];
+        for (int y = 0; y < image.getHeight(); y++) {
+            for (int x = 0; x < image.getWidth(); x++) {
+                gray[y][x] = luminance(image.getRGB(x, y));
+            }
+        }
+        return gray;
+    }
+
+    private static int[][] gaussianBlur(int[][] input) {
+        int rows = input.length;
+        int cols = rows == 0 ? 0 : input[0].length;
+        int[][] horizontal = new int[rows][cols];
+        int[][] output = new int[rows][cols];
+        int[] kernel = {1, 4, 6, 4, 1};
+
+        for (int y = 0; y < rows; y++) {
+            for (int x = 0; x < cols; x++) {
+                int total = 0;
+                for (int k = 0; k < kernel.length; k++) {
+                    int sourceX = clamp(x + k - 2, 0, cols - 1);
+                    total += input[y][sourceX] * kernel[k];
                 }
+                horizontal[y][x] = total / 16;
+            }
+        }
+
+        for (int y = 0; y < rows; y++) {
+            for (int x = 0; x < cols; x++) {
+                int total = 0;
+                for (int k = 0; k < kernel.length; k++) {
+                    int sourceY = clamp(y + k - 2, 0, rows - 1);
+                    total += horizontal[sourceY][x] * kernel[k];
+                }
+                output[y][x] = total / 16;
+            }
+        }
+
+        return output;
+    }
+
+    private static boolean[][] thresholdAbsDiff(int[][] expectedGray, int[][] actualGray, int threshold) {
+        int rows = expectedGray.length;
+        int cols = rows == 0 ? 0 : expectedGray[0].length;
+        boolean[][] mask = new boolean[rows][cols];
+
+        for (int y = 0; y < rows; y++) {
+            for (int x = 0; x < cols; x++) {
+                mask[y][x] = Math.abs(expectedGray[y][x] - actualGray[y][x]) >= threshold;
             }
         }
 
         return mask;
     }
 
-    private static boolean isSignificantBlock(
-            BufferedImage expected,
-            BufferedImage actual,
-            int startX,
-            int startY,
-            int width,
-            int height,
-            int effectivePixelTolerance
-    ) {
-        int pixels = width * height;
-        double expectedTotal = 0.0;
-        double actualTotal = 0.0;
-        long totalDelta = 0;
-        int strongPixels = 0;
+    private static boolean[][] dilate(boolean[][] input) {
+        int rows = input.length;
+        int cols = rows == 0 ? 0 : input[0].length;
+        boolean[][] output = new boolean[rows][cols];
 
-        for (int y = startY; y < startY + height; y++) {
-            for (int x = startX; x < startX + width; x++) {
-                int expectedValue = luminance(expected.getRGB(x, y));
-                int actualValue = luminance(actual.getRGB(x, y));
-                int delta = Math.abs(expectedValue - actualValue);
-                expectedTotal += expectedValue;
-                actualTotal += actualValue;
-                totalDelta += delta;
-                if (delta >= effectivePixelTolerance) {
-                    strongPixels++;
+        for (int y = 0; y < rows; y++) {
+            for (int x = 0; x < cols; x++) {
+                boolean value = false;
+                for (int dy = -1; dy <= 1 && !value; dy++) {
+                    for (int dx = -1; dx <= 1; dx++) {
+                        int sourceY = y + dy;
+                        int sourceX = x + dx;
+                        if (sourceY >= 0 && sourceY < rows && sourceX >= 0 && sourceX < cols && input[sourceY][sourceX]) {
+                            value = true;
+                            break;
+                        }
+                    }
                 }
+                output[y][x] = value;
             }
         }
 
-        double expectedMean = expectedTotal / pixels;
-        double actualMean = actualTotal / pixels;
-        double expectedVariance = 0.0;
-        double actualVariance = 0.0;
-        double covariance = 0.0;
+        return output;
+    }
 
-        for (int y = startY; y < startY + height; y++) {
-            for (int x = startX; x < startX + width; x++) {
-                double expectedDelta = luminance(expected.getRGB(x, y)) - expectedMean;
-                double actualDelta = luminance(actual.getRGB(x, y)) - actualMean;
-                expectedVariance += expectedDelta * expectedDelta;
-                actualVariance += actualDelta * actualDelta;
-                covariance += expectedDelta * actualDelta;
+    private static boolean[][] erode(boolean[][] input) {
+        int rows = input.length;
+        int cols = rows == 0 ? 0 : input[0].length;
+        boolean[][] output = new boolean[rows][cols];
+
+        for (int y = 0; y < rows; y++) {
+            for (int x = 0; x < cols; x++) {
+                boolean value = true;
+                for (int dy = -1; dy <= 1 && value; dy++) {
+                    for (int dx = -1; dx <= 1; dx++) {
+                        int sourceY = y + dy;
+                        int sourceX = x + dx;
+                        if (sourceY < 0 || sourceY >= rows || sourceX < 0 || sourceX >= cols || !input[sourceY][sourceX]) {
+                            value = false;
+                            break;
+                        }
+                    }
+                }
+                output[y][x] = value;
             }
         }
 
-        expectedVariance /= pixels;
-        actualVariance /= pixels;
-        covariance /= pixels;
+        return output;
+    }
 
-        double c1 = 6.5025;
-        double c2 = 58.5225;
-        double ssim = ((2.0 * expectedMean * actualMean + c1) * (2.0 * covariance + c2))
-                / ((expectedMean * expectedMean + actualMean * actualMean + c1)
-                * (expectedVariance + actualVariance + c2));
-        double averageDelta = totalDelta / (double) pixels;
-        double strongRatio = strongPixels / (double) pixels;
-        return ssim <= 0.72 && averageDelta >= 10.0 && strongRatio >= 0.06;
+    private static int clamp(int value, int min, int max) {
+        return Math.max(min, Math.min(max, value));
     }
 
     private static long applyIgnoredRegions(boolean[][] mask, VisualCompareOptions options) {
@@ -307,14 +347,6 @@ final class OpenCvImageComparator {
         visited[y][x] = true;
         queue[tail++] = y * mask[0].length + x;
         return tail;
-    }
-
-    private static void fillBlock(boolean[][] mask, int startX, int startY, int width, int height) {
-        for (int y = startY; y < startY + height; y++) {
-            for (int x = startX; x < startX + width; x++) {
-                mask[y][x] = true;
-            }
-        }
     }
 
     private static long countMaskPixels(boolean[][] mask) {

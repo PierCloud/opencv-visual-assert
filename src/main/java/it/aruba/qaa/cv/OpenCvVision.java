@@ -35,7 +35,7 @@ public final class OpenCvVision {
             );
         }
 
-        Match match = findBestMatch(screenshot, templateImage);
+        Match match = findBestMatch(toGray(screenshot), toGray(templateImage));
         VisualRegion matchRegion = VisualRegion.of(
                 match.x(),
                 match.y(),
@@ -66,12 +66,16 @@ public final class OpenCvVision {
         return VisualAssert.compareScreenshotBytes(actualScreenshotBytes, baselineKeyOrPath, options);
     }
 
-    private static Match findBestMatch(BufferedImage screenshot, BufferedImage template) {
-        int step = Math.max(1, Math.min(template.getWidth(), template.getHeight()) / 20);
+    private static Match findBestMatch(int[][] screenshot, int[][] template) {
+        int screenshotHeight = screenshot.length;
+        int screenshotWidth = screenshotHeight == 0 ? 0 : screenshot[0].length;
+        int templateHeight = template.length;
+        int templateWidth = templateHeight == 0 ? 0 : template[0].length;
+        int step = Math.max(1, Math.min(templateWidth, templateHeight) / 20);
         Match best = new Match(0, 0, -1.0);
 
-        for (int y = 0; y <= screenshot.getHeight() - template.getHeight(); y += step) {
-            for (int x = 0; x <= screenshot.getWidth() - template.getWidth(); x += step) {
+        for (int y = 0; y <= screenshotHeight - templateHeight; y += step) {
+            for (int x = 0; x <= screenshotWidth - templateWidth; x += step) {
                 double score = scoreAt(screenshot, template, x, y);
                 if (score > best.score()) {
                     best = new Match(x, y, score);
@@ -82,10 +86,10 @@ public final class OpenCvVision {
         int searchRadius = Math.max(2, step);
         Match refined = best;
         for (int y = Math.max(0, best.y() - searchRadius);
-             y <= Math.min(screenshot.getHeight() - template.getHeight(), best.y() + searchRadius);
+             y <= Math.min(screenshotHeight - templateHeight, best.y() + searchRadius);
              y++) {
             for (int x = Math.max(0, best.x() - searchRadius);
-                 x <= Math.min(screenshot.getWidth() - template.getWidth(), best.x() + searchRadius);
+                 x <= Math.min(screenshotWidth - templateWidth, best.x() + searchRadius);
                  x++) {
                 double score = scoreAt(screenshot, template, x, y);
                 if (score > refined.score()) {
@@ -97,20 +101,51 @@ public final class OpenCvVision {
         return refined;
     }
 
-    private static double scoreAt(BufferedImage screenshot, BufferedImage template, int offsetX, int offsetY) {
-        long totalDelta = 0;
-        int pixels = template.getWidth() * template.getHeight();
-        for (int y = 0; y < template.getHeight(); y++) {
-            for (int x = 0; x < template.getWidth(); x++) {
-                totalDelta += Math.abs(
-                        luminance(screenshot.getRGB(offsetX + x, offsetY + y))
-                                - luminance(template.getRGB(x, y))
-                );
+    private static double scoreAt(int[][] screenshot, int[][] template, int offsetX, int offsetY) {
+        int templateHeight = template.length;
+        int templateWidth = templateHeight == 0 ? 0 : template[0].length;
+        int pixels = templateWidth * templateHeight;
+        double screenshotTotal = 0.0;
+        double templateTotal = 0.0;
+
+        for (int y = 0; y < templateHeight; y++) {
+            for (int x = 0; x < templateWidth; x++) {
+                screenshotTotal += screenshot[offsetY + y][offsetX + x];
+                templateTotal += template[y][x];
             }
         }
 
-        double averageDelta = totalDelta / (double) pixels;
-        return Math.max(0.0, 1.0 - averageDelta / 255.0);
+        double screenshotMean = screenshotTotal / pixels;
+        double templateMean = templateTotal / pixels;
+        double numerator = 0.0;
+        double screenshotVariance = 0.0;
+        double templateVariance = 0.0;
+
+        for (int y = 0; y < templateHeight; y++) {
+            for (int x = 0; x < templateWidth; x++) {
+                double screenshotValue = screenshot[offsetY + y][offsetX + x] - screenshotMean;
+                double templateValue = template[y][x] - templateMean;
+                numerator += screenshotValue * templateValue;
+                screenshotVariance += screenshotValue * screenshotValue;
+                templateVariance += templateValue * templateValue;
+            }
+        }
+
+        double denominator = Math.sqrt(screenshotVariance * templateVariance);
+        if (denominator == 0.0) {
+            return 0.0;
+        }
+        return Math.max(0.0, numerator / denominator);
+    }
+
+    private static int[][] toGray(BufferedImage image) {
+        int[][] gray = new int[image.getHeight()][image.getWidth()];
+        for (int y = 0; y < image.getHeight(); y++) {
+            for (int x = 0; x < image.getWidth(); x++) {
+                gray[y][x] = luminance(image.getRGB(x, y));
+            }
+        }
+        return gray;
     }
 
     private static int luminance(int rgb) {

@@ -132,6 +132,8 @@ Il path del report e' disponibile dal risultato:
 result.htmlReport().ifPresent(path -> System.out.println("Visual report: " + path));
 ```
 
+Il confronto normalizza le immagini, ridimensiona l'actual alla baseline quando necessario, lavora in scala di grigi, applica blur, differenza assoluta, soglia, morfologia e filtro sulle componenti isolate.
+
 ## Template Matching
 
 ```java
@@ -152,6 +154,8 @@ if (!result.found()) {
     throw new AssertionError(result.failureMessage());
 }
 ```
+
+Il template matching usa correlazione normalizzata, ricerca a passo variabile e raffinamento locale del punto migliore.
 
 ## Soglie
 
