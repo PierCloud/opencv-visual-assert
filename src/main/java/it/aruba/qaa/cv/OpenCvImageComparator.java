@@ -92,6 +92,14 @@ final class OpenCvImageComparator {
         threshold(gray, mask, effectivePixelTolerance, 255, THRESH_BINARY);
 
         long ignoredPixels = applyIgnoredRegions(mask, options);
+        int minimumComponentArea = minimumSignificantComponentArea(mask);
+        long renderingNoisePixels = removeSmallComponents(mask, minimumComponentArea);
+        if (renderingNoisePixels > 0) {
+            note += (note.isBlank() ? "" : " ")
+                    + "Ignored " + renderingNoisePixels
+                    + " isolated rendering-noise pixels below component area " + minimumComponentArea + ".";
+        }
+
         long comparedPixels = Math.max(0, (long) mask.rows() * mask.cols() - ignoredPixels);
         long diffPixels = countNonZero(mask);
         double diffPercent = comparedPixels == 0 ? 0.0 : diffPixels * 100.0 / comparedPixels;
@@ -171,6 +179,97 @@ final class OpenCvImageComparator {
             ignoredPixels += region.clippedArea(mask.cols(), mask.rows());
         }
         return ignoredPixels;
+    }
+
+    private static int minimumSignificantComponentArea(Mat mask) {
+        long pixels = (long) mask.rows() * mask.cols();
+        return (int) Math.max(16, pixels / 120_000);
+    }
+
+    private static long removeSmallComponents(Mat mask, int minimumArea) {
+        int rows = mask.rows();
+        int cols = mask.cols();
+        boolean[] visited = new boolean[rows * cols];
+        int[] queue = new int[rows * cols];
+        long removedPixels = 0;
+
+        UByteIndexer indexer = mask.createIndexer();
+        try {
+            for (int y = 0; y < rows; y++) {
+                for (int x = 0; x < cols; x++) {
+                    int start = y * cols + x;
+                    if (visited[start] || indexer.get(y, x) == 0) {
+                        continue;
+                    }
+
+                    int size = collectComponent(indexer, visited, queue, rows, cols, x, y);
+                    if (size < minimumArea) {
+                        for (int i = 0; i < size; i++) {
+                            int pixel = queue[i];
+                            indexer.put(pixel / cols, pixel % cols, 0);
+                        }
+                        removedPixels += size;
+                    }
+                }
+            }
+        } finally {
+            indexer.release();
+        }
+
+        return removedPixels;
+    }
+
+    private static int collectComponent(
+            UByteIndexer indexer,
+            boolean[] visited,
+            int[] queue,
+            int rows,
+            int cols,
+            int startX,
+            int startY
+    ) {
+        int head = 0;
+        int tail = 0;
+        int start = startY * cols + startX;
+        visited[start] = true;
+        queue[tail++] = start;
+
+        while (head < tail) {
+            int pixel = queue[head++];
+            int x = pixel % cols;
+            int y = pixel / cols;
+
+            tail = addNeighbor(indexer, visited, queue, rows, cols, x - 1, y, tail);
+            tail = addNeighbor(indexer, visited, queue, rows, cols, x + 1, y, tail);
+            tail = addNeighbor(indexer, visited, queue, rows, cols, x, y - 1, tail);
+            tail = addNeighbor(indexer, visited, queue, rows, cols, x, y + 1, tail);
+        }
+
+        return tail;
+    }
+
+    private static int addNeighbor(
+            UByteIndexer indexer,
+            boolean[] visited,
+            int[] queue,
+            int rows,
+            int cols,
+            int x,
+            int y,
+            int tail
+    ) {
+        if (x < 0 || y < 0 || x >= cols || y >= rows) {
+            return tail;
+        }
+
+        int position = y * cols + x;
+        if (visited[position] || indexer.get(y, x) == 0) {
+            return tail;
+        }
+
+        visited[position] = true;
+        queue[tail++] = position;
+        return tail;
     }
 
     private static Mat resizeTo(Mat image, int width, int height) {
