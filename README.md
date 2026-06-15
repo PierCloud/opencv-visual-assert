@@ -1,6 +1,6 @@
-# opencv-visual-assert
+# visual-assert
 
-Libreria Maven per confronti visuali basati su OpenCV.
+Libreria Maven per confronti visuali custom in Java.
 
 ## Scope
 
@@ -11,28 +11,15 @@ La libreria riceve immagini prodotte dal progetto chiamante e restituisce risult
 ```xml
 <dependency>
     <groupId>it.aruba.qaa</groupId>
-    <artifactId>opencv-visual-assert</artifactId>
+    <artifactId>visual-assert</artifactId>
     <version>0.1.0-SNAPSHOT</version>
     <scope>test</scope>
 </dependency>
 ```
 
-## Runtime OpenCV
+## Dipendenze
 
-La dipendenza OpenCV e' dichiarata `provided` per non propagare automaticamente i jar nativi nei progetti chiamanti.
-
-Nel progetto che esegue i test visuali va resa disponibile nel profilo/job dedicato:
-
-```xml
-<dependency>
-    <groupId>org.bytedeco</groupId>
-    <artifactId>opencv-platform</artifactId>
-    <version>4.13.0-1.5.13</version>
-    <scope>test</scope>
-</dependency>
-```
-
-La scansione di sicurezza globale dovrebbe analizzare il framework senza il profilo visuale. Il profilo visuale va eseguito in ambiente controllato, con browser, viewport, font e runtime OpenCV stabili.
+La libreria non dichiara dipendenze esterne. Il motore visuale usa solo API Java standard.
 
 ## Baseline
 
@@ -42,16 +29,16 @@ Directory baseline supportata:
 test/cv_img
 ```
 
-Nel progetto E2E la baseline deve essere disponibile nel classpath come:
+Nel progetto E2E la baseline deve trovarsi sotto:
 
 ```text
-test/cv_img
+resources/test/cv_img
 ```
 
 Esempio:
 
 ```text
-test/cv_img/checkout-summary.png
+resources/test/cv_img/checkout-summary.png
 ```
 
 La chiave `checkout-summary` risolve automaticamente:
@@ -113,8 +100,8 @@ VisualCompareResult result = VisualAssertUtil.compareScreenshot(screenshotBytes,
 1. il progetto chiamante porta la UI nello stato da verificare
 2. il test aspetta che la UI sia stabile
 3. il progetto chiamante produce lo screenshot
-4. opencv-visual-assert carica la baseline da test/cv_img
-5. OpenCV confronta baseline e screenshot
+4. visual-assert carica la baseline da test/cv_img
+5. il motore visuale confronta baseline e screenshot
 6. il test fallisce se la differenza supera le soglie configurate
 ```
 
@@ -137,7 +124,7 @@ Artifact:
 
 Il progetto chiamante gestisce `passed()`, `failureMessage()` e i path degli artifact.
 
-Il file `*-diff.png` evidenzia in rosso i pixel differenti. Il file `*-report.html` mostra baseline, actual e diff affiancati con riepilogo numerico.
+Il file `*-diff.png` evidenzia in rosso le aree considerate differenti. Il file `*-report.html` mostra baseline, actual e diff affiancati con riepilogo numerico.
 
 ## Template Matching
 
@@ -173,4 +160,4 @@ VisualCompareOptions options = VisualCompareOptions.builder()
 
 `pixelTolerance` gestisce piccole variazioni colore per antialiasing, font rendering e differenze browser.
 
-`maxDiffPercent` definisce la percentuale massima di pixel differenti ammessa.
+`maxDiffPercent` definisce la percentuale massima di area differente ammessa.

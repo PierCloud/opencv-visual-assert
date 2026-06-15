@@ -1,15 +1,10 @@
 package it.aruba.qaa.cv;
 
-import org.bytedeco.javacpp.DoublePointer;
-import org.bytedeco.opencv.opencv_core.Mat;
-import org.bytedeco.opencv.opencv_core.Point;
-
+import java.awt.Color;
+import java.awt.Graphics2D;
+import java.awt.image.BufferedImage;
 import java.nio.file.Path;
 import java.util.Optional;
-
-import static org.bytedeco.opencv.global.opencv_core.minMaxLoc;
-import static org.bytedeco.opencv.global.opencv_imgproc.TM_CCOEFF_NORMED;
-import static org.bytedeco.opencv.global.opencv_imgproc.matchTemplate;
 
 public final class OpenCvVision {
 
@@ -22,14 +17,14 @@ public final class OpenCvVision {
             TemplateMatchOptions options
     ) {
         BaselineImageLoader.LoadedImage template = BaselineImageLoader.loadFromClasspathOrPath(templateKeyOrPath);
-        Mat screenshot = OpenCvImageComparator.normalizeToBgr(
+        BufferedImage screenshot = OpenCvImageComparator.normalize(
                 OpenCvImageComparator.decodeImage(screenshotBytes, "screenshot")
         );
-        Mat templateImage = OpenCvImageComparator.normalizeToBgr(
+        BufferedImage templateImage = OpenCvImageComparator.normalize(
                 OpenCvImageComparator.decodeImage(template.bytes(), "template image")
         );
 
-        if (templateImage.cols() > screenshot.cols() || templateImage.rows() > screenshot.rows()) {
+        if (templateImage.getWidth() > screenshot.getWidth() || templateImage.getHeight() > screenshot.getHeight()) {
             return new TemplateMatchResult(
                     false,
                     0.0,
@@ -40,31 +35,22 @@ public final class OpenCvVision {
             );
         }
 
-        Mat result = new Mat();
-        matchTemplate(screenshot, templateImage, result, TM_CCOEFF_NORMED);
-
-        DoublePointer minValue = new DoublePointer(1);
-        DoublePointer maxValue = new DoublePointer(1);
-        Point minLocation = new Point();
-        Point maxLocation = new Point();
-        minMaxLoc(result, minValue, maxValue, minLocation, maxLocation, null);
-
-        double score = maxValue.get();
+        Match match = findBestMatch(screenshot, templateImage);
         VisualRegion matchRegion = VisualRegion.of(
-                maxLocation.x(),
-                maxLocation.y(),
-                templateImage.cols(),
-                templateImage.rows()
+                match.x(),
+                match.y(),
+                templateImage.getWidth(),
+                templateImage.getHeight()
         );
 
         Path searchPath = options.outputDirectory().resolve(options.artifactName() + "-search.png");
         if (options.writeSearchImage()) {
-            writeSearchImage(screenshot, searchPath);
+            writeSearchImage(screenshot, matchRegion, searchPath);
         }
 
         return new TemplateMatchResult(
-                score >= options.minScore(),
-                score,
+                match.score() >= options.minScore(),
+                match.score(),
                 matchRegion,
                 template.displayPath(),
                 options.writeSearchImage() ? Optional.of(searchPath) : Optional.empty(),
@@ -80,7 +66,77 @@ public final class OpenCvVision {
         return VisualAssert.compareScreenshotBytes(actualScreenshotBytes, baselineKeyOrPath, options);
     }
 
-    private static void writeSearchImage(Mat screenshot, Path searchPath) {
-        OpenCvImageComparator.writePngForVisionApi(screenshot, searchPath);
+    private static Match findBestMatch(BufferedImage screenshot, BufferedImage template) {
+        int step = Math.max(1, Math.min(template.getWidth(), template.getHeight()) / 20);
+        Match best = new Match(0, 0, -1.0);
+
+        for (int y = 0; y <= screenshot.getHeight() - template.getHeight(); y += step) {
+            for (int x = 0; x <= screenshot.getWidth() - template.getWidth(); x += step) {
+                double score = scoreAt(screenshot, template, x, y);
+                if (score > best.score()) {
+                    best = new Match(x, y, score);
+                }
+            }
+        }
+
+        int searchRadius = Math.max(2, step);
+        Match refined = best;
+        for (int y = Math.max(0, best.y() - searchRadius);
+             y <= Math.min(screenshot.getHeight() - template.getHeight(), best.y() + searchRadius);
+             y++) {
+            for (int x = Math.max(0, best.x() - searchRadius);
+                 x <= Math.min(screenshot.getWidth() - template.getWidth(), best.x() + searchRadius);
+                 x++) {
+                double score = scoreAt(screenshot, template, x, y);
+                if (score > refined.score()) {
+                    refined = new Match(x, y, score);
+                }
+            }
+        }
+
+        return refined;
+    }
+
+    private static double scoreAt(BufferedImage screenshot, BufferedImage template, int offsetX, int offsetY) {
+        long totalDelta = 0;
+        int pixels = template.getWidth() * template.getHeight();
+        for (int y = 0; y < template.getHeight(); y++) {
+            for (int x = 0; x < template.getWidth(); x++) {
+                totalDelta += Math.abs(
+                        luminance(screenshot.getRGB(offsetX + x, offsetY + y))
+                                - luminance(template.getRGB(x, y))
+                );
+            }
+        }
+
+        double averageDelta = totalDelta / (double) pixels;
+        return Math.max(0.0, 1.0 - averageDelta / 255.0);
+    }
+
+    private static int luminance(int rgb) {
+        int red = (rgb >> 16) & 0xff;
+        int green = (rgb >> 8) & 0xff;
+        int blue = rgb & 0xff;
+        return (int) Math.round(0.2126 * red + 0.7152 * green + 0.0722 * blue);
+    }
+
+    private static void writeSearchImage(BufferedImage screenshot, VisualRegion region, Path searchPath) {
+        BufferedImage output = new BufferedImage(
+                screenshot.getWidth(),
+                screenshot.getHeight(),
+                BufferedImage.TYPE_INT_RGB
+        );
+        Graphics2D graphics = output.createGraphics();
+        try {
+            graphics.drawImage(screenshot, 0, 0, null);
+            graphics.setColor(Color.RED);
+            graphics.drawRect(region.x(), region.y(), Math.max(0, region.width() - 1), Math.max(0, region.height() - 1));
+        } finally {
+            graphics.dispose();
+        }
+        OpenCvImageComparator.writePngForVisionApi(output, searchPath);
+    }
+
+    private record Match(int x, int y, double score) {
     }
 }

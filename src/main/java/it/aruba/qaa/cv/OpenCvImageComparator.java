@@ -1,31 +1,16 @@
 package it.aruba.qaa.cv;
 
-import org.bytedeco.javacpp.BytePointer;
-import org.bytedeco.javacpp.indexer.UByteIndexer;
-import org.bytedeco.opencv.opencv_core.Mat;
-import org.bytedeco.opencv.opencv_core.Rect;
-import org.bytedeco.opencv.opencv_core.Scalar;
-import org.bytedeco.opencv.opencv_core.Size;
-
+import javax.imageio.ImageIO;
+import java.awt.Color;
+import java.awt.Graphics2D;
+import java.awt.RenderingHints;
+import java.awt.image.BufferedImage;
+import java.io.ByteArrayInputStream;
+import java.io.ByteArrayOutputStream;
 import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.Optional;
-
-import static org.bytedeco.opencv.global.opencv_core.CV_8UC1;
-import static org.bytedeco.opencv.global.opencv_core.absdiff;
-import static org.bytedeco.opencv.global.opencv_core.countNonZero;
-import static org.bytedeco.opencv.global.opencv_imgcodecs.IMREAD_UNCHANGED;
-import static org.bytedeco.opencv.global.opencv_imgcodecs.imdecode;
-import static org.bytedeco.opencv.global.opencv_imgcodecs.imencode;
-import static org.bytedeco.opencv.global.opencv_imgproc.COLOR_BGRA2BGR;
-import static org.bytedeco.opencv.global.opencv_imgproc.COLOR_GRAY2BGR;
-import static org.bytedeco.opencv.global.opencv_imgproc.COLOR_BGR2GRAY;
-import static org.bytedeco.opencv.global.opencv_imgproc.GaussianBlur;
-import static org.bytedeco.opencv.global.opencv_imgproc.LINE_8;
-import static org.bytedeco.opencv.global.opencv_imgproc.cvtColor;
-import static org.bytedeco.opencv.global.opencv_imgproc.resize;
-import static org.bytedeco.opencv.global.opencv_imgproc.rectangle;
 
 final class OpenCvImageComparator {
 
@@ -38,8 +23,8 @@ final class OpenCvImageComparator {
             Path expectedDisplayPath,
             VisualCompareOptions options
     ) {
-        Mat actual = normalizeToBgr(decodeImage(actualImageBytes, "actual screenshot"));
-        Mat expected = normalizeToBgr(decodeImage(expectedImageBytes, "baseline image"));
+        BufferedImage actual = normalize(decodeImage(actualImageBytes, "actual screenshot"));
+        BufferedImage expected = normalize(decodeImage(expectedImageBytes, "baseline image"));
 
         Path expectedPath = options.outputDirectory().resolve(options.artifactName() + "-expected.png");
         Path actualPath = options.outputDirectory().resolve(options.artifactName() + "-actual.png");
@@ -53,11 +38,11 @@ final class OpenCvImageComparator {
         }
 
         String note = "";
-        if (actual.cols() != expected.cols() || actual.rows() != expected.rows()) {
-            note = "Image size mismatch. Expected " + expected.cols() + "x" + expected.rows()
-                    + ", actual " + actual.cols() + "x" + actual.rows()
-                    + ". Diff uses the actual image normalized to baseline size.";
-            actual = resizeTo(actual, expected.cols(), expected.rows());
+        if (actual.getWidth() != expected.getWidth() || actual.getHeight() != expected.getHeight()) {
+            note = "Image size mismatch. Expected " + expected.getWidth() + "x" + expected.getHeight()
+                    + ", actual " + actual.getWidth() + "x" + actual.getHeight()
+                    + ". Actual image normalized to baseline size.";
+            actual = resizeTo(actual, expected.getWidth(), expected.getHeight());
         }
 
         if (options.writeActualImage()) {
@@ -71,13 +56,7 @@ final class OpenCvImageComparator {
                     + " for perceptual comparison.";
         }
 
-        Mat expectedGray = toGray(blurForDiff(expected));
-        Mat actualGray = toGray(blurForDiff(actual));
-        Mat grayDelta = new Mat();
-        absdiff(expectedGray, actualGray, grayDelta);
-
-        Mat mask = buildPerceptualMask(expectedGray, actualGray, grayDelta, effectivePixelTolerance);
-
+        boolean[][] mask = buildPerceptualMask(expected, actual, effectivePixelTolerance);
         long ignoredPixels = applyIgnoredRegions(mask, options);
         int minimumComponentArea = minimumSignificantComponentArea(mask);
         long renderingNoisePixels = removeSmallComponents(mask, minimumComponentArea);
@@ -87,8 +66,8 @@ final class OpenCvImageComparator {
                     + " isolated rendering-noise pixels below component area " + minimumComponentArea + ".";
         }
 
-        long comparedPixels = Math.max(0, (long) mask.rows() * mask.cols() - ignoredPixels);
-        long diffPixels = countNonZero(mask);
+        long comparedPixels = Math.max(0, (long) expected.getWidth() * expected.getHeight() - ignoredPixels);
+        long diffPixels = countMaskPixels(mask);
         double diffPercent = comparedPixels == 0 ? 0.0 : diffPixels * 100.0 / comparedPixels;
 
         if (options.writeDiffImage()) {
@@ -127,200 +106,82 @@ final class OpenCvImageComparator {
         );
     }
 
-    static Mat decodeImage(byte[] imageBytes, String imageName) {
-        BytePointer pointer = new BytePointer(imageBytes);
-        Mat buffer = new Mat(1, imageBytes.length, CV_8UC1, pointer);
-        Mat image = imdecode(buffer, IMREAD_UNCHANGED);
-        if (image == null || image.empty()) {
-            throw new VisualAssertException("OpenCV could not decode " + imageName);
-        }
-        return image;
-    }
-
-    static Mat normalizeToBgr(Mat image) {
-        Mat normalized = new Mat();
-        if (image.channels() == 4) {
-            cvtColor(image, normalized, COLOR_BGRA2BGR);
-            return normalized;
-        }
-        if (image.channels() == 1) {
-            cvtColor(image, normalized, COLOR_GRAY2BGR);
-            return normalized;
-        }
-        return image;
-    }
-
-    private static long applyIgnoredRegions(Mat mask, VisualCompareOptions options) {
-        long ignoredPixels = 0;
-        for (VisualRegion region : options.ignoredRegions()) {
-            int x = Math.max(0, region.x());
-            int y = Math.max(0, region.y());
-            int right = Math.min(mask.cols(), region.x() + region.width());
-            int bottom = Math.min(mask.rows(), region.y() + region.height());
-
-            if (right <= x || bottom <= y) {
-                continue;
-            }
-
-            rectangle(mask, new Rect(x, y, right - x, bottom - y), new Scalar(0.0), -1, LINE_8, 0);
-            ignoredPixels += region.clippedArea(mask.cols(), mask.rows());
-        }
-        return ignoredPixels;
-    }
-
-    private static int minimumSignificantComponentArea(Mat mask) {
-        long pixels = (long) mask.rows() * mask.cols();
-        return (int) Math.max(16, pixels / 120_000);
-    }
-
-    private static long removeSmallComponents(Mat mask, int minimumArea) {
-        int rows = mask.rows();
-        int cols = mask.cols();
-        boolean[] visited = new boolean[rows * cols];
-        int[] queue = new int[rows * cols];
-        long removedPixels = 0;
-
-        UByteIndexer indexer = mask.createIndexer();
+    static BufferedImage decodeImage(byte[] imageBytes, String imageName) {
         try {
-            for (int y = 0; y < rows; y++) {
-                for (int x = 0; x < cols; x++) {
-                    int start = y * cols + x;
-                    if (visited[start] || indexer.get(y, x) == 0) {
-                        continue;
-                    }
+            BufferedImage image = ImageIO.read(new ByteArrayInputStream(imageBytes));
+            if (image == null) {
+                throw new VisualAssertException("Could not decode " + imageName);
+            }
+            return image;
+        } catch (IOException e) {
+            throw new VisualAssertException("Unable to decode " + imageName, e);
+        }
+    }
 
-                    int size = collectComponent(indexer, visited, queue, rows, cols, x, y);
-                    if (size < minimumArea) {
-                        for (int i = 0; i < size; i++) {
-                            int pixel = queue[i];
-                            indexer.put(pixel / cols, pixel % cols, 0);
-                        }
-                        removedPixels += size;
-                    }
+    static BufferedImage normalize(BufferedImage image) {
+        if (image.getType() == BufferedImage.TYPE_INT_RGB) {
+            return image;
+        }
+
+        BufferedImage normalized = new BufferedImage(image.getWidth(), image.getHeight(), BufferedImage.TYPE_INT_RGB);
+        Graphics2D graphics = normalized.createGraphics();
+        try {
+            graphics.setColor(Color.WHITE);
+            graphics.fillRect(0, 0, normalized.getWidth(), normalized.getHeight());
+            graphics.drawImage(image, 0, 0, null);
+        } finally {
+            graphics.dispose();
+        }
+        return normalized;
+    }
+
+    private static boolean[][] buildPerceptualMask(
+            BufferedImage expected,
+            BufferedImage actual,
+            int effectivePixelTolerance
+    ) {
+        int width = expected.getWidth();
+        int height = expected.getHeight();
+        int blockSize = Math.max(24, Math.min(64, Math.min(width, height) / 35));
+        boolean[][] mask = new boolean[height][width];
+
+        for (int y = 0; y < height; y += blockSize) {
+            for (int x = 0; x < width; x += blockSize) {
+                int blockWidth = Math.min(blockSize, width - x);
+                int blockHeight = Math.min(blockSize, height - y);
+                if (isSignificantBlock(expected, actual, x, y, blockWidth, blockHeight, effectivePixelTolerance)) {
+                    fillBlock(mask, x, y, blockWidth, blockHeight);
                 }
             }
-        } finally {
-            indexer.release();
-        }
-
-        return removedPixels;
-    }
-
-    private static int collectComponent(
-            UByteIndexer indexer,
-            boolean[] visited,
-            int[] queue,
-            int rows,
-            int cols,
-            int startX,
-            int startY
-    ) {
-        int head = 0;
-        int tail = 0;
-        int start = startY * cols + startX;
-        visited[start] = true;
-        queue[tail++] = start;
-
-        while (head < tail) {
-            int pixel = queue[head++];
-            int x = pixel % cols;
-            int y = pixel / cols;
-
-            tail = addNeighbor(indexer, visited, queue, rows, cols, x - 1, y, tail);
-            tail = addNeighbor(indexer, visited, queue, rows, cols, x + 1, y, tail);
-            tail = addNeighbor(indexer, visited, queue, rows, cols, x, y - 1, tail);
-            tail = addNeighbor(indexer, visited, queue, rows, cols, x, y + 1, tail);
-        }
-
-        return tail;
-    }
-
-    private static int addNeighbor(
-            UByteIndexer indexer,
-            boolean[] visited,
-            int[] queue,
-            int rows,
-            int cols,
-            int x,
-            int y,
-            int tail
-    ) {
-        if (x < 0 || y < 0 || x >= cols || y >= rows) {
-            return tail;
-        }
-
-        int position = y * cols + x;
-        if (visited[position] || indexer.get(y, x) == 0) {
-            return tail;
-        }
-
-        visited[position] = true;
-        queue[tail++] = position;
-        return tail;
-    }
-
-    private static Mat buildPerceptualMask(Mat expectedGray, Mat actualGray, Mat grayDelta, int effectivePixelTolerance) {
-        int rows = grayDelta.rows();
-        int cols = grayDelta.cols();
-        int blockSize = Math.max(24, Math.min(64, Math.min(rows, cols) / 35));
-        Mat mask = new Mat(rows, cols, CV_8UC1, new Scalar(0.0));
-
-        UByteIndexer expectedIndexer = expectedGray.createIndexer();
-        UByteIndexer actualIndexer = actualGray.createIndexer();
-        UByteIndexer deltaIndexer = grayDelta.createIndexer();
-        UByteIndexer maskIndexer = mask.createIndexer();
-        try {
-            for (int y = 0; y < rows; y += blockSize) {
-                for (int x = 0; x < cols; x += blockSize) {
-                    int width = Math.min(blockSize, cols - x);
-                    int height = Math.min(blockSize, rows - y);
-                    if (isSignificantBlock(
-                            expectedIndexer,
-                            actualIndexer,
-                            deltaIndexer,
-                            x,
-                            y,
-                            width,
-                            height,
-                            effectivePixelTolerance
-                    )) {
-                        fillBlock(maskIndexer, x, y, width, height);
-                    }
-                }
-            }
-        } finally {
-            expectedIndexer.release();
-            actualIndexer.release();
-            deltaIndexer.release();
-            maskIndexer.release();
         }
 
         return mask;
     }
 
     private static boolean isSignificantBlock(
-            UByteIndexer expectedIndexer,
-            UByteIndexer actualIndexer,
-            UByteIndexer deltaIndexer,
+            BufferedImage expected,
+            BufferedImage actual,
             int startX,
             int startY,
             int width,
             int height,
             int effectivePixelTolerance
     ) {
+        int pixels = width * height;
         double expectedTotal = 0.0;
         double actualTotal = 0.0;
         long totalDelta = 0;
         int strongPixels = 0;
-        int pixels = width * height;
 
         for (int y = startY; y < startY + height; y++) {
             for (int x = startX; x < startX + width; x++) {
-                expectedTotal += expectedIndexer.get(y, x);
-                actualTotal += actualIndexer.get(y, x);
-                int value = deltaIndexer.get(y, x);
-                totalDelta += value;
-                if (value >= effectivePixelTolerance) {
+                int expectedValue = luminance(expected.getRGB(x, y));
+                int actualValue = luminance(actual.getRGB(x, y));
+                int delta = Math.abs(expectedValue - actualValue);
+                expectedTotal += expectedValue;
+                actualTotal += actualValue;
+                totalDelta += delta;
+                if (delta >= effectivePixelTolerance) {
                     strongPixels++;
                 }
             }
@@ -334,11 +195,11 @@ final class OpenCvImageComparator {
 
         for (int y = startY; y < startY + height; y++) {
             for (int x = startX; x < startX + width; x++) {
-                double expected = expectedIndexer.get(y, x) - expectedMean;
-                double actual = actualIndexer.get(y, x) - actualMean;
-                expectedVariance += expected * expected;
-                actualVariance += actual * actual;
-                covariance += expected * actual;
+                double expectedDelta = luminance(expected.getRGB(x, y)) - expectedMean;
+                double actualDelta = luminance(actual.getRGB(x, y)) - actualMean;
+                expectedVariance += expectedDelta * expectedDelta;
+                actualVariance += actualDelta * actualDelta;
+                covariance += expectedDelta * actualDelta;
             }
         }
 
@@ -356,50 +217,158 @@ final class OpenCvImageComparator {
         return ssim <= 0.72 && averageDelta >= 10.0 && strongRatio >= 0.06;
     }
 
-    private static void fillBlock(UByteIndexer maskIndexer, int startX, int startY, int width, int height) {
+    private static long applyIgnoredRegions(boolean[][] mask, VisualCompareOptions options) {
+        long ignoredPixels = 0;
+        int rows = mask.length;
+        int cols = rows == 0 ? 0 : mask[0].length;
+        for (VisualRegion region : options.ignoredRegions()) {
+            int x = Math.max(0, region.x());
+            int y = Math.max(0, region.y());
+            int right = Math.min(cols, region.x() + region.width());
+            int bottom = Math.min(rows, region.y() + region.height());
+
+            if (right <= x || bottom <= y) {
+                continue;
+            }
+
+            for (int row = y; row < bottom; row++) {
+                for (int col = x; col < right; col++) {
+                    mask[row][col] = false;
+                }
+            }
+            ignoredPixels += region.clippedArea(cols, rows);
+        }
+        return ignoredPixels;
+    }
+
+    private static int minimumSignificantComponentArea(boolean[][] mask) {
+        long pixels = (long) mask.length * (mask.length == 0 ? 0 : mask[0].length);
+        return (int) Math.max(16, pixels / 120_000);
+    }
+
+    private static long removeSmallComponents(boolean[][] mask, int minimumArea) {
+        int rows = mask.length;
+        int cols = rows == 0 ? 0 : mask[0].length;
+        boolean[][] visited = new boolean[rows][cols];
+        int[] queue = new int[rows * cols];
+        long removedPixels = 0;
+
+        for (int y = 0; y < rows; y++) {
+            for (int x = 0; x < cols; x++) {
+                if (visited[y][x] || !mask[y][x]) {
+                    continue;
+                }
+
+                int size = collectComponent(mask, visited, queue, x, y);
+                if (size < minimumArea) {
+                    for (int i = 0; i < size; i++) {
+                        int pixel = queue[i];
+                        mask[pixel / cols][pixel % cols] = false;
+                    }
+                    removedPixels += size;
+                }
+            }
+        }
+
+        return removedPixels;
+    }
+
+    private static int collectComponent(boolean[][] mask, boolean[][] visited, int[] queue, int startX, int startY) {
+        int cols = mask[0].length;
+        int head = 0;
+        int tail = 0;
+        visited[startY][startX] = true;
+        queue[tail++] = startY * cols + startX;
+
+        while (head < tail) {
+            int pixel = queue[head++];
+            int x = pixel % cols;
+            int y = pixel / cols;
+
+            tail = addNeighbor(mask, visited, queue, x - 1, y, tail);
+            tail = addNeighbor(mask, visited, queue, x + 1, y, tail);
+            tail = addNeighbor(mask, visited, queue, x, y - 1, tail);
+            tail = addNeighbor(mask, visited, queue, x, y + 1, tail);
+        }
+
+        return tail;
+    }
+
+    private static int addNeighbor(boolean[][] mask, boolean[][] visited, int[] queue, int x, int y, int tail) {
+        if (y < 0 || y >= mask.length || x < 0 || x >= mask[0].length) {
+            return tail;
+        }
+
+        if (visited[y][x] || !mask[y][x]) {
+            return tail;
+        }
+
+        visited[y][x] = true;
+        queue[tail++] = y * mask[0].length + x;
+        return tail;
+    }
+
+    private static void fillBlock(boolean[][] mask, int startX, int startY, int width, int height) {
         for (int y = startY; y < startY + height; y++) {
             for (int x = startX; x < startX + width; x++) {
-                maskIndexer.put(y, x, 255);
+                mask[y][x] = true;
             }
         }
     }
 
-    private static Mat resizeTo(Mat image, int width, int height) {
-        Mat resized = new Mat();
-        resize(image, resized, new Size(width, height));
+    private static long countMaskPixels(boolean[][] mask) {
+        long count = 0;
+        for (boolean[] row : mask) {
+            for (boolean value : row) {
+                if (value) {
+                    count++;
+                }
+            }
+        }
+        return count;
+    }
+
+    private static BufferedImage resizeTo(BufferedImage image, int width, int height) {
+        BufferedImage resized = new BufferedImage(width, height, BufferedImage.TYPE_INT_RGB);
+        Graphics2D graphics = resized.createGraphics();
+        try {
+            graphics.setRenderingHint(RenderingHints.KEY_INTERPOLATION, RenderingHints.VALUE_INTERPOLATION_BILINEAR);
+            graphics.setRenderingHint(RenderingHints.KEY_RENDERING, RenderingHints.VALUE_RENDER_QUALITY);
+            graphics.drawImage(image, 0, 0, width, height, null);
+        } finally {
+            graphics.dispose();
+        }
         return resized;
     }
 
-    private static Mat blurForDiff(Mat image) {
-        Mat blurred = new Mat();
-        GaussianBlur(image, blurred, new Size(5, 5), 0.0);
-        return blurred;
+    private static int luminance(int rgb) {
+        int red = (rgb >> 16) & 0xff;
+        int green = (rgb >> 8) & 0xff;
+        int blue = rgb & 0xff;
+        return (int) Math.round(0.2126 * red + 0.7152 * green + 0.0722 * blue);
     }
 
-    private static Mat toGray(Mat image) {
-        Mat gray = new Mat();
-        cvtColor(image, gray, COLOR_BGR2GRAY);
-        return gray;
-    }
-
-    private static void writeDiffImage(Mat actual, Mat mask, Path diffPath) {
-        Mat diff = actual.clone();
-        UByteIndexer maskIndexer = mask.createIndexer();
-        UByteIndexer diffIndexer = diff.createIndexer();
+    private static void writeDiffImage(BufferedImage actual, boolean[][] mask, Path diffPath) {
+        BufferedImage diff = new BufferedImage(actual.getWidth(), actual.getHeight(), BufferedImage.TYPE_INT_RGB);
+        Graphics2D graphics = diff.createGraphics();
         try {
-            for (int y = 0; y < mask.rows(); y++) {
-                for (int x = 0; x < mask.cols(); x++) {
-                    if (maskIndexer.get(y, x) > 0) {
-                        diffIndexer.put(y, x, 0, 0);
-                        diffIndexer.put(y, x, 1, 0);
-                        diffIndexer.put(y, x, 2, 255);
-                    }
+            graphics.drawImage(actual, 0, 0, null);
+        } finally {
+            graphics.dispose();
+        }
+
+        for (int y = 0; y < diff.getHeight(); y++) {
+            for (int x = 0; x < diff.getWidth(); x++) {
+                if (mask[y][x]) {
+                    int rgb = diff.getRGB(x, y);
+                    int red = Math.max(180, (rgb >> 16) & 0xff);
+                    int green = ((rgb >> 8) & 0xff) / 4;
+                    int blue = (rgb & 0xff) / 4;
+                    diff.setRGB(x, y, new Color(red, green, blue).getRGB());
                 }
             }
-        } finally {
-            maskIndexer.release();
-            diffIndexer.release();
         }
+
         writePng(diff, diffPath);
     }
 
@@ -497,24 +466,26 @@ final class OpenCvImageComparator {
                 .replace("\"", "&quot;");
     }
 
-    private static void writePng(Mat image, Path outputPath) {
+    private static void writePng(BufferedImage image, Path outputPath) {
         ensureOutputDirectory(outputPath.getParent());
-        BytePointer encoded = new BytePointer();
-        if (!imencode(".png", image, encoded)) {
-            throw new VisualAssertException("OpenCV could not encode image: " + outputPath);
-        }
-
-        byte[] bytes = new byte[(int) encoded.limit()];
-        encoded.get(bytes);
         try {
-            Files.write(outputPath, bytes);
+            ImageIO.write(image, "png", outputPath.toFile());
         } catch (IOException e) {
             throw new VisualAssertException("Unable to write image: " + outputPath, e);
         }
     }
 
-    static void writePngForVisionApi(Mat image, Path outputPath) {
+    static void writePngForVisionApi(BufferedImage image, Path outputPath) {
         writePng(image, outputPath);
+    }
+
+    static byte[] encodePngForVisionApi(BufferedImage image) {
+        try (ByteArrayOutputStream output = new ByteArrayOutputStream()) {
+            ImageIO.write(image, "png", output);
+            return output.toByteArray();
+        } catch (IOException e) {
+            throw new VisualAssertException("Unable to encode image", e);
+        }
     }
 
     private static void ensureOutputDirectory(Path directory) {

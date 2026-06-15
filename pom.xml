@@ -5,28 +5,20 @@
     <modelVersion>4.0.0</modelVersion>
 
     <groupId>it.aruba.qaa</groupId>
-    <artifactId>opencv-visual-assert</artifactId>
+    <artifactId>visual-assert</artifactId>
     <version>0.1.0-SNAPSHOT</version>
     <packaging>jar</packaging>
 
-    <name>opencv-visual-assert</name>
-    <description>OpenCV visual assertion library.</description>
+    <name>visual-assert</name>
+    <description>Visual assertion library.</description>
 
     <properties>
         <java.version>17</java.version>
         <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
         <maven.compiler.release>${java.version}</maven.compiler.release>
-        <bytedeco.version>1.5.13</bytedeco.version>
-        <opencv.version>4.13.0-${bytedeco.version}</opencv.version>
     </properties>
 
     <dependencies>
-        <dependency>
-            <groupId>org.bytedeco</groupId>
-            <artifactId>opencv-platform</artifactId>
-            <version>${opencv.version}</version>
-            <scope>provided</scope>
-        </dependency>
     </dependencies>
 
     <build>
