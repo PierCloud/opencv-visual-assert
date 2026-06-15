@@ -46,7 +46,7 @@ final class BaselineImageLoader {
                 return null;
             }
 
-            return new LoadedImage(stream.readAllBytes(), Path.of("classpath:", resourcePath));
+            return new LoadedImage(stream.readAllBytes(), Path.of(resourcePath));
         } catch (IOException e) {
             throw new VisualAssertException("Unable to read baseline resource: " + resourcePath, e);
         }
