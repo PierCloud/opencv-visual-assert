@@ -33,16 +33,28 @@ final class OpenCvImageComparator {
 
         ensureOutputDirectory(options.outputDirectory());
 
-        if (options.writeExpectedImage()) {
-            writePng(expected, expectedPath);
-        }
-
         String note = "";
         if (actual.getWidth() != expected.getWidth() || actual.getHeight() != expected.getHeight()) {
             note = "Image size mismatch. Expected " + expected.getWidth() + "x" + expected.getHeight()
                     + ", actual " + actual.getWidth() + "x" + actual.getHeight()
                     + ". Actual image normalized to baseline size.";
             actual = resizeTo(actual, expected.getWidth(), expected.getHeight());
+        }
+
+        Optional<VisualRegion> compareOnlyRegion = options.compareOnlyRegion();
+        if (compareOnlyRegion.isPresent()) {
+            VisualRegion clippedRegion = clipRegion(compareOnlyRegion.get(), expected.getWidth(), expected.getHeight());
+            expected = crop(expected, clippedRegion);
+            actual = crop(actual, clippedRegion);
+            note += (note.isBlank() ? "" : " ")
+                    + "Compared only region x=" + clippedRegion.x()
+                    + ", y=" + clippedRegion.y()
+                    + ", width=" + clippedRegion.width()
+                    + ", height=" + clippedRegion.height() + ".";
+        }
+
+        if (options.writeExpectedImage()) {
+            writePng(expected, expectedPath);
         }
 
         if (options.writeActualImage()) {
@@ -170,6 +182,48 @@ final class OpenCvImageComparator {
             case WARNING -> 1;
             case FAILED -> 2;
         };
+    }
+
+    private static VisualRegion clipRegion(VisualRegion region, int imageWidth, int imageHeight) {
+        int x = Math.max(0, region.x());
+        int y = Math.max(0, region.y());
+        int right = Math.min(imageWidth, region.x() + region.width());
+        int bottom = Math.min(imageHeight, region.y() + region.height());
+
+        if (right <= x || bottom <= y) {
+            throw new VisualAssertException(
+                    "compareOnlyRegion is outside image bounds: x=" + region.x()
+                            + ", y=" + region.y()
+                            + ", width=" + region.width()
+                            + ", height=" + region.height()
+                            + ", imageWidth=" + imageWidth
+                            + ", imageHeight=" + imageHeight
+            );
+        }
+
+        return VisualRegion.of(x, y, right - x, bottom - y);
+    }
+
+    private static BufferedImage crop(BufferedImage image, VisualRegion region) {
+        BufferedImage cropped = new BufferedImage(region.width(), region.height(), BufferedImage.TYPE_INT_RGB);
+        Graphics2D graphics = cropped.createGraphics();
+        try {
+            graphics.drawImage(
+                    image,
+                    0,
+                    0,
+                    region.width(),
+                    region.height(),
+                    region.x(),
+                    region.y(),
+                    region.x() + region.width(),
+                    region.y() + region.height(),
+                    null
+            );
+        } finally {
+            graphics.dispose();
+        }
+        return cropped;
     }
 
     static BufferedImage decodeImage(byte[] imageBytes, String imageName) {

@@ -5,6 +5,7 @@ import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
 import java.util.Objects;
+import java.util.Optional;
 
 public final class VisualCompareOptions {
 
@@ -19,6 +20,7 @@ public final class VisualCompareOptions {
     private final boolean writeDiffImage;
     private final boolean writeExpectedImage;
     private final boolean writeHtmlReport;
+    private final VisualRegion compareOnlyRegion;
     private final List<VisualRegion> ignoredRegions;
 
     private VisualCompareOptions(Builder builder) {
@@ -33,6 +35,7 @@ public final class VisualCompareOptions {
         this.writeDiffImage = builder.writeDiffImage;
         this.writeExpectedImage = builder.writeExpectedImage;
         this.writeHtmlReport = builder.writeHtmlReport;
+        this.compareOnlyRegion = builder.compareOnlyRegion;
         this.ignoredRegions = Collections.unmodifiableList(new ArrayList<>(builder.ignoredRegions));
     }
 
@@ -84,6 +87,10 @@ public final class VisualCompareOptions {
         return writeHtmlReport;
     }
 
+    public Optional<VisualRegion> compareOnlyRegion() {
+        return Optional.ofNullable(compareOnlyRegion);
+    }
+
     public List<VisualRegion> ignoredRegions() {
         return ignoredRegions;
     }
@@ -100,6 +107,7 @@ public final class VisualCompareOptions {
         private boolean writeDiffImage = true;
         private boolean writeExpectedImage = true;
         private boolean writeHtmlReport = true;
+        private VisualRegion compareOnlyRegion;
         private final List<VisualRegion> ignoredRegions = new ArrayList<>();
 
         private Builder() {
@@ -172,6 +180,16 @@ public final class VisualCompareOptions {
 
         public Builder writeHtmlReport(boolean writeHtmlReport) {
             this.writeHtmlReport = writeHtmlReport;
+            return this;
+        }
+
+        public Builder compareOnlyRegion(VisualRegion compareOnlyRegion) {
+            this.compareOnlyRegion = Objects.requireNonNull(compareOnlyRegion, "compareOnlyRegion");
+            return this;
+        }
+
+        public Builder clearCompareOnlyRegion() {
+            this.compareOnlyRegion = null;
             return this;
         }
 

@@ -4,6 +4,7 @@ import java.io.IOException;
 import java.nio.file.DirectoryStream;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.util.List;
 import java.util.Objects;
 
 public final class VisualAssertUtil {
@@ -49,6 +50,54 @@ public final class VisualAssertUtil {
                         .pixelTolerance(12)
                         .build()
         );
+    }
+
+    public static VisualCompareResult compareScreenshotCustom(
+            byte[] screenshotBytes,
+            String imageKey,
+            String artifactName,
+            Path outputDirectory,
+            double maxDiffPercent,
+            long maxDiffPixels,
+            double warningThresholdRatio,
+            double failureThresholdMultiplier,
+            int pixelTolerance,
+            VisualRegion compareOnlyRegion,
+            List<VisualRegion> ignoredRegions,
+            boolean writeExpectedImage,
+            boolean writeActualImage,
+            boolean writeDiffImage,
+            boolean writeHtmlReport
+    ) {
+        Objects.requireNonNull(screenshotBytes, "screenshotBytes");
+        Objects.requireNonNull(outputDirectory, "outputDirectory");
+        String normalizedKey = normalizeImageKey(imageKey);
+        String resolvedArtifactName = artifactName == null || artifactName.isBlank()
+                ? normalizedKey
+                : artifactName.trim();
+
+        VisualCompareOptions.Builder builder = VisualCompareOptions.builder()
+                .artifactName(resolvedArtifactName)
+                .outputDirectory(outputDirectory)
+                .maxDiffPercent(maxDiffPercent)
+                .maxDiffPixels(maxDiffPixels)
+                .warningThresholdRatio(warningThresholdRatio)
+                .failureThresholdMultiplier(failureThresholdMultiplier)
+                .pixelTolerance(pixelTolerance)
+                .writeExpectedImage(writeExpectedImage)
+                .writeActualImage(writeActualImage)
+                .writeDiffImage(writeDiffImage)
+                .writeHtmlReport(writeHtmlReport);
+
+        if (compareOnlyRegion != null) {
+            builder.compareOnlyRegion(compareOnlyRegion);
+        }
+
+        if (ignoredRegions != null && !ignoredRegions.isEmpty()) {
+            builder.ignoreRegions(ignoredRegions);
+        }
+
+        return VisualAssert.compareScreenshotBytes(screenshotBytes, normalizedKey, builder.build());
     }
 
     private static String normalizeImageKey(String imageKey) {

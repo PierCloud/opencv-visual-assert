@@ -100,6 +100,50 @@ byte[] screenshotBytes = captureScreenshotBytes();
 VisualCompareResult result = VisualAssertUtil.compareScreenshot(screenshotBytes, "access-hed-page");
 ```
 
+Per confrontare solo una regione dell'immagine:
+
+```java
+import it.aruba.qaa.cv.VisualRegion;
+
+VisualCompareResult result = VisualAssert.compareScreenshotBytes(
+        screenshotBytes,
+        "access-hed-page",
+        VisualCompareOptions.builder()
+                .artifactName("access-hed-page-login-box")
+                .compareOnlyRegion(VisualRegion.of(500, 300, 700, 420))
+                .maxDiffPercent(0.05)
+                .pixelTolerance(12)
+                .build()
+);
+```
+
+`compareOnlyRegion` ritaglia baseline e actual prima del confronto. Se usata insieme a `ignoreRegion`, le coordinate di `ignoreRegion` sono relative alla regione ritagliata.
+
+Per usare una chiamata completamente parametrica:
+
+```java
+import java.nio.file.Path;
+import java.util.List;
+
+VisualCompareResult result = VisualAssertUtil.compareScreenshotCustom(
+        screenshotBytes,
+        "access-hed-page",
+        "access-hed-page-login-box",
+        Path.of("target", "visual-assert"),
+        0.05,
+        0,
+        0.80,
+        1.25,
+        12,
+        VisualRegion.of(500, 300, 700, 420),
+        List.of(),
+        true,
+        true,
+        true,
+        true
+);
+```
+
 ## Flusso E2E
 
 ```text
@@ -168,6 +212,7 @@ Il template matching usa correlazione normalizzata, ricerca a passo variabile e 
 ```java
 VisualCompareOptions options = VisualCompareOptions.builder()
         .artifactName("checkout-summary")
+        .compareOnlyRegion(VisualRegion.of(500, 300, 700, 420))
         .maxDiffPercent(0.25)
         .warningThresholdRatio(0.80)
         .failureThresholdMultiplier(1.25)
@@ -179,6 +224,8 @@ VisualCompareOptions options = VisualCompareOptions.builder()
 `pixelTolerance` gestisce piccole variazioni colore per antialiasing, font rendering e differenze browser.
 
 `maxDiffPercent` definisce la percentuale massima di area differente ammessa.
+
+`compareOnlyRegion` limita il confronto a una sola area dell'immagine.
 
 `warningThresholdRatio` definisce quando iniziare a segnalare warning rispetto alla soglia. Con `0.80`, un valore sopra l'80% della soglia entra in warning.
 
