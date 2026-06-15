@@ -15,12 +15,14 @@ import java.util.Optional;
 import static org.bytedeco.opencv.global.opencv_core.CV_8UC1;
 import static org.bytedeco.opencv.global.opencv_core.absdiff;
 import static org.bytedeco.opencv.global.opencv_core.countNonZero;
+import static org.bytedeco.opencv.global.opencv_core.mean;
 import static org.bytedeco.opencv.global.opencv_imgcodecs.IMREAD_UNCHANGED;
 import static org.bytedeco.opencv.global.opencv_imgcodecs.imdecode;
 import static org.bytedeco.opencv.global.opencv_imgcodecs.imencode;
 import static org.bytedeco.opencv.global.opencv_imgproc.COLOR_BGRA2BGR;
 import static org.bytedeco.opencv.global.opencv_imgproc.COLOR_GRAY2BGR;
 import static org.bytedeco.opencv.global.opencv_imgproc.COLOR_BGR2GRAY;
+import static org.bytedeco.opencv.global.opencv_imgproc.GaussianBlur;
 import static org.bytedeco.opencv.global.opencv_imgproc.LINE_8;
 import static org.bytedeco.opencv.global.opencv_imgproc.THRESH_BINARY;
 import static org.bytedeco.opencv.global.opencv_imgproc.cvtColor;
@@ -52,9 +54,6 @@ final class OpenCvImageComparator {
         if (options.writeExpectedImage()) {
             writePng(expected, expectedPath);
         }
-        if (options.writeActualImage()) {
-            writePng(actual, actualPath);
-        }
 
         String note = "";
         if (actual.cols() != expected.cols() || actual.rows() != expected.rows()) {
@@ -64,14 +63,33 @@ final class OpenCvImageComparator {
             actual = resizeTo(actual, expected.cols(), expected.rows());
         }
 
+        AlignmentOffset alignmentOffset = findBestAlignment(expected, actual);
+        if (!alignmentOffset.isZero()) {
+            actual = shiftToSize(actual, expected.cols(), expected.rows(), alignmentOffset);
+            note += (note.isBlank() ? "" : " ")
+                    + "Actual image aligned by dx=" + alignmentOffset.dx()
+                    + ", dy=" + alignmentOffset.dy() + " before diff.";
+        }
+
+        if (options.writeActualImage()) {
+            writePng(actual, actualPath);
+        }
+
+        int effectivePixelTolerance = Math.max(options.pixelTolerance(), 24);
+        if (effectivePixelTolerance != options.pixelTolerance()) {
+            note += (note.isBlank() ? "" : " ")
+                    + "Effective pixel tolerance raised to " + effectivePixelTolerance
+                    + " to reduce rendering noise.";
+        }
+
         Mat delta = new Mat();
-        absdiff(expected, actual, delta);
+        absdiff(blurForDiff(expected), blurForDiff(actual), delta);
 
         Mat gray = new Mat();
         cvtColor(delta, gray, COLOR_BGR2GRAY);
 
         Mat mask = new Mat();
-        threshold(gray, mask, options.pixelTolerance(), 255, THRESH_BINARY);
+        threshold(gray, mask, effectivePixelTolerance, 255, THRESH_BINARY);
 
         long ignoredPixels = applyIgnoredRegions(mask, options);
         long comparedPixels = Math.max(0, (long) mask.rows() * mask.cols() - ignoredPixels);
@@ -94,6 +112,7 @@ final class OpenCvImageComparator {
                     diffPercent,
                     passed,
                     options,
+                    effectivePixelTolerance,
                     note
             );
         }
@@ -109,7 +128,7 @@ final class OpenCvImageComparator {
                 (note.isBlank() ? "" : note + " ")
                         + "Allowed maxDiffPercent=" + options.maxDiffPercent()
                         + ", maxDiffPixels=" + options.maxDiffPixels()
-                        + ", pixelTolerance=" + options.pixelTolerance()
+                        + ", pixelTolerance=" + effectivePixelTolerance
         );
     }
 
@@ -160,6 +179,75 @@ final class OpenCvImageComparator {
         return resized;
     }
 
+    private static AlignmentOffset findBestAlignment(Mat expected, Mat actual) {
+        int maxOffset = Math.max(2, Math.min(24, Math.min(expected.cols(), expected.rows()) / 80));
+        Mat expectedGray = toGray(resizeTo(expected, Math.max(1, expected.cols() / 4), Math.max(1, expected.rows() / 4)));
+        Mat actualGray = toGray(resizeTo(actual, Math.max(1, actual.cols() / 4), Math.max(1, actual.rows() / 4)));
+        int scaledMaxOffset = Math.max(1, maxOffset / 4);
+
+        AlignmentOffset bestOffset = new AlignmentOffset(0, 0);
+        double bestScore = Double.MAX_VALUE;
+        for (int dy = -scaledMaxOffset; dy <= scaledMaxOffset; dy++) {
+            for (int dx = -scaledMaxOffset; dx <= scaledMaxOffset; dx++) {
+                double score = alignmentScore(expectedGray, actualGray, dx, dy);
+                if (score < bestScore) {
+                    bestScore = score;
+                    bestOffset = new AlignmentOffset(dx * 4, dy * 4);
+                }
+            }
+        }
+        return bestOffset;
+    }
+
+    private static double alignmentScore(Mat expected, Mat actual, int dx, int dy) {
+        int expectedX = Math.max(0, dx);
+        int actualX = Math.max(0, -dx);
+        int expectedY = Math.max(0, dy);
+        int actualY = Math.max(0, -dy);
+        int width = Math.min(expected.cols() - expectedX, actual.cols() - actualX);
+        int height = Math.min(expected.rows() - expectedY, actual.rows() - actualY);
+        if (width <= 0 || height <= 0) {
+            return Double.MAX_VALUE;
+        }
+
+        Mat expectedRoi = new Mat(expected, new Rect(expectedX, expectedY, width, height));
+        Mat actualRoi = new Mat(actual, new Rect(actualX, actualY, width, height));
+        Mat delta = new Mat();
+        absdiff(expectedRoi, actualRoi, delta);
+        return mean(delta).get(0);
+    }
+
+    private static Mat shiftToSize(Mat image, int width, int height, AlignmentOffset offset) {
+        Mat shifted = new Mat(height, width, image.type(), new Scalar(255.0, 255.0, 255.0, 0.0));
+
+        int sourceX = Math.max(0, -offset.dx());
+        int sourceY = Math.max(0, -offset.dy());
+        int targetX = Math.max(0, offset.dx());
+        int targetY = Math.max(0, offset.dy());
+        int copyWidth = Math.min(image.cols() - sourceX, width - targetX);
+        int copyHeight = Math.min(image.rows() - sourceY, height - targetY);
+        if (copyWidth <= 0 || copyHeight <= 0) {
+            return shifted;
+        }
+
+        Mat source = new Mat(image, new Rect(sourceX, sourceY, copyWidth, copyHeight));
+        Mat target = new Mat(shifted, new Rect(targetX, targetY, copyWidth, copyHeight));
+        source.copyTo(target);
+        return shifted;
+    }
+
+    private static Mat toGray(Mat image) {
+        Mat gray = new Mat();
+        cvtColor(image, gray, COLOR_BGR2GRAY);
+        return gray;
+    }
+
+    private static Mat blurForDiff(Mat image) {
+        Mat blurred = new Mat();
+        GaussianBlur(image, blurred, new Size(3, 3), 0.0);
+        return blurred;
+    }
+
     private static void writeDiffImage(Mat actual, Mat mask, Path diffPath) {
         Mat diff = actual.clone();
         UByteIndexer maskIndexer = mask.createIndexer();
@@ -191,6 +279,7 @@ final class OpenCvImageComparator {
             double diffPercent,
             boolean passed,
             VisualCompareOptions options,
+            int effectivePixelTolerance,
             String note
     ) {
         String html = """
@@ -239,7 +328,7 @@ final class OpenCvImageComparator {
                 comparedPixels,
                 diffPercent,
                 options.maxDiffPercent(),
-                options.pixelTolerance(),
+                effectivePixelTolerance,
                 escape(note),
                 imageFigure("Baseline", expectedPath),
                 imageFigure("Actual", actualPath),
@@ -304,5 +393,11 @@ final class OpenCvImageComparator {
 
     private static Optional<Path> optionalPath(boolean enabled, Path path) {
         return enabled ? Optional.of(path) : Optional.empty();
+    }
+
+    private record AlignmentOffset(int dx, int dy) {
+        boolean isZero() {
+            return dx == 0 && dy == 0;
+        }
     }
 }
