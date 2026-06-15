@@ -55,6 +55,22 @@ final class OpenCvImageComparator {
         }
 
         if (actual.cols() != expected.cols() || actual.rows() != expected.rows()) {
+            String mismatchMessage = "Image size mismatch. Expected " + expected.cols() + "x" + expected.rows()
+                    + ", actual " + actual.cols() + "x" + actual.rows();
+            if (options.writeHtmlReport()) {
+                writeHtmlReport(
+                        reportPath,
+                        optionalPath(options.writeExpectedImage(), expectedPath),
+                        optionalPath(options.writeActualImage(), actualPath),
+                        Optional.empty(),
+                        -1,
+                        -1,
+                        100.0,
+                        false,
+                        options,
+                        mismatchMessage
+                );
+            }
             return new VisualCompareResult(
                     false,
                     -1,
@@ -63,8 +79,7 @@ final class OpenCvImageComparator {
                     options.writeExpectedImage() ? expectedPath : expectedDisplayPath,
                     optionalPath(options.writeActualImage(), actualPath),
                     Optional.empty(),
-                    "Image size mismatch. Expected " + expected.cols() + "x" + expected.rows()
-                            + ", actual " + actual.cols() + "x" + actual.rows()
+                    mismatchMessage
             );
         }
 
@@ -97,7 +112,8 @@ final class OpenCvImageComparator {
                     comparedPixels,
                     diffPercent,
                     passed,
-                    options
+                    options,
+                    ""
             );
         }
 
@@ -186,7 +202,8 @@ final class OpenCvImageComparator {
             long comparedPixels,
             double diffPercent,
             boolean passed,
-            VisualCompareOptions options
+            VisualCompareOptions options,
+            String note
     ) {
         String html = """
                 <!doctype html>
@@ -217,6 +234,7 @@ final class OpenCvImageComparator {
                         <dt>Diff percent</dt><dd>%.6f</dd>
                         <dt>Max diff percent</dt><dd>%.6f</dd>
                         <dt>Pixel tolerance</dt><dd>%d</dd>
+                        <dt>Note</dt><dd>%s</dd>
                     </dl>
                     <section class="grid">
                         %s
@@ -234,6 +252,7 @@ final class OpenCvImageComparator {
                 diffPercent,
                 options.maxDiffPercent(),
                 options.pixelTolerance(),
+                escape(note),
                 imageFigure("Baseline", expectedPath),
                 imageFigure("Actual", actualPath),
                 imageFigure("Diff", diffPath)
@@ -257,6 +276,9 @@ final class OpenCvImageComparator {
     }
 
     private static String escape(String value) {
+        if (value == null) {
+            return "";
+        }
         return value
                 .replace("&", "&amp;")
                 .replace("<", "&lt;")
