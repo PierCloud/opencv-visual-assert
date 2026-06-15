@@ -99,6 +99,7 @@ final class OpenCvImageComparator {
                 options.writeExpectedImage() ? expectedPath : expectedDisplayPath,
                 optionalPath(options.writeActualImage(), actualPath),
                 optionalPath(options.writeDiffImage(), diffPath),
+                optionalPath(options.writeHtmlReport(), reportPath),
                 (note.isBlank() ? "" : note + " ")
                         + "Allowed maxDiffPercent=" + options.maxDiffPercent()
                         + ", maxDiffPixels=" + options.maxDiffPixels()

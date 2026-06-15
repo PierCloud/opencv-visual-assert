@@ -126,6 +126,12 @@ Il progetto chiamante gestisce `passed()`, `failureMessage()` e i path degli art
 
 Il file `*-diff.png` evidenzia in rosso le aree considerate differenti. Il file `*-report.html` mostra baseline, actual e diff affiancati con riepilogo numerico.
 
+Il path del report e' disponibile dal risultato:
+
+```java
+result.htmlReport().ifPresent(path -> System.out.println("Visual report: " + path));
+```
+
 ## Template Matching
 
 ```java
