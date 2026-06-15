@@ -69,12 +69,17 @@ final class OpenCvImageComparator {
         long comparedPixels = Math.max(0, (long) expected.getWidth() * expected.getHeight() - ignoredPixels);
         long diffPixels = countMaskPixels(mask);
         double diffPercent = comparedPixels == 0 ? 0.0 : diffPixels * 100.0 / comparedPixels;
+        boolean passed = diffPixels <= options.maxDiffPixels() || diffPercent <= options.maxDiffPercent();
 
-        if (options.writeDiffImage()) {
-            writeDiffImage(actual, mask, diffPath);
+        if (passed && diffPixels > 0) {
+            note += (note.isBlank() ? "" : " ")
+                    + "Detected differences are within configured threshold.";
         }
 
-        boolean passed = diffPixels <= options.maxDiffPixels() || diffPercent <= options.maxDiffPercent();
+        if (options.writeDiffImage()) {
+            writeDiffImage(actual, mask, diffPath, passed);
+        }
+
         if (options.writeHtmlReport()) {
             writeHtmlReport(
                     reportPath,
@@ -381,7 +386,7 @@ final class OpenCvImageComparator {
         return (int) Math.round(0.2126 * red + 0.7152 * green + 0.0722 * blue);
     }
 
-    private static void writeDiffImage(BufferedImage actual, boolean[][] mask, Path diffPath) {
+    private static void writeDiffImage(BufferedImage actual, boolean[][] mask, Path diffPath, boolean passed) {
         BufferedImage diff = new BufferedImage(actual.getWidth(), actual.getHeight(), BufferedImage.TYPE_INT_RGB);
         Graphics2D graphics = diff.createGraphics();
         try {
@@ -394,9 +399,9 @@ final class OpenCvImageComparator {
             for (int x = 0; x < diff.getWidth(); x++) {
                 if (mask[y][x]) {
                     int rgb = diff.getRGB(x, y);
-                    int red = Math.max(180, (rgb >> 16) & 0xff);
-                    int green = ((rgb >> 8) & 0xff) / 4;
-                    int blue = (rgb & 0xff) / 4;
+                    int red = passed ? Math.max(180, (rgb >> 16) & 0xff) : Math.max(190, (rgb >> 16) & 0xff);
+                    int green = passed ? Math.max(140, ((rgb >> 8) & 0xff) / 2) : ((rgb >> 8) & 0xff) / 4;
+                    int blue = passed ? (rgb & 0xff) / 5 : (rgb & 0xff) / 4;
                     diff.setRGB(x, y, new Color(red, green, blue).getRGB());
                 }
             }
@@ -458,7 +463,7 @@ final class OpenCvImageComparator {
                 </html>
                 """.formatted(
                 passed ? "#047857" : "#b91c1c",
-                passed ? "PASSED" : "FAILED",
+                passed ? (diffPixels > 0 ? "PASSED - TOLERATED DIFFERENCES" : "PASSED") : "FAILED",
                 escape(options.artifactName()),
                 diffPixels,
                 comparedPixels,
@@ -468,7 +473,7 @@ final class OpenCvImageComparator {
                 escape(note),
                 imageFigure("Baseline", expectedPath),
                 imageFigure("Actual", actualPath),
-                imageFigure("Diff", diffPath)
+                imageFigure(passed ? "Tolerated diff" : "Diff", diffPath)
         );
 
         try {

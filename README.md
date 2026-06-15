@@ -124,7 +124,7 @@ Artifact:
 
 Il progetto chiamante gestisce `passed()`, `failureMessage()` e i path degli artifact.
 
-Il file `*-diff.png` evidenzia in rosso le aree considerate differenti. Il file `*-report.html` mostra baseline, actual e diff affiancati con riepilogo numerico.
+Il file `*-diff.png` evidenzia le aree considerate differenti. Se il confronto passa ma ci sono differenze sotto soglia, il report indica `PASSED - TOLERATED DIFFERENCES`; se la soglia viene superata, indica `FAILED`.
 
 Il path del report e' disponibile dal risultato:
 
