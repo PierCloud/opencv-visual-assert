@@ -17,6 +17,23 @@ La libreria riceve immagini prodotte dal progetto chiamante e restituisce risult
 </dependency>
 ```
 
+## Runtime OpenCV
+
+La dipendenza OpenCV e' dichiarata `provided` per non propagare automaticamente i jar nativi nei progetti chiamanti.
+
+Nel progetto che esegue i test visuali va resa disponibile nel profilo/job dedicato:
+
+```xml
+<dependency>
+    <groupId>org.bytedeco</groupId>
+    <artifactId>opencv-platform</artifactId>
+    <version>4.13.0-1.5.13</version>
+    <scope>test</scope>
+</dependency>
+```
+
+La scansione di sicurezza globale dovrebbe analizzare il framework senza il profilo visuale. Il profilo visuale va eseguito in ambiente controllato, con browser, viewport, font e runtime OpenCV stabili.
+
 ## Baseline
 
 Directory baseline supportata:

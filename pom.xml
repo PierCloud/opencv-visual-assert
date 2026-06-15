@@ -25,6 +25,7 @@
             <groupId>org.bytedeco</groupId>
             <artifactId>opencv-platform</artifactId>
             <version>${opencv.version}</version>
+            <scope>provided</scope>
         </dependency>
     </dependencies>
 
