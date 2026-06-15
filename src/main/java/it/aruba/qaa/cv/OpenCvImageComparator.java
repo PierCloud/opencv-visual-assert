@@ -71,13 +71,12 @@ final class OpenCvImageComparator {
                     + " for perceptual comparison.";
         }
 
-        Mat delta = new Mat();
-        absdiff(blurForDiff(expected), blurForDiff(actual), delta);
+        Mat expectedGray = toGray(blurForDiff(expected));
+        Mat actualGray = toGray(blurForDiff(actual));
+        Mat grayDelta = new Mat();
+        absdiff(expectedGray, actualGray, grayDelta);
 
-        Mat gray = new Mat();
-        cvtColor(delta, gray, COLOR_BGR2GRAY);
-
-        Mat mask = buildPerceptualMask(gray, effectivePixelTolerance);
+        Mat mask = buildPerceptualMask(expectedGray, actualGray, grayDelta, effectivePixelTolerance);
 
         long ignoredPixels = applyIgnoredRegions(mask, options);
         int minimumComponentArea = minimumSignificantComponentArea(mask);
@@ -260,12 +259,14 @@ final class OpenCvImageComparator {
         return tail;
     }
 
-    private static Mat buildPerceptualMask(Mat grayDelta, int effectivePixelTolerance) {
+    private static Mat buildPerceptualMask(Mat expectedGray, Mat actualGray, Mat grayDelta, int effectivePixelTolerance) {
         int rows = grayDelta.rows();
         int cols = grayDelta.cols();
         int blockSize = Math.max(24, Math.min(64, Math.min(rows, cols) / 35));
         Mat mask = new Mat(rows, cols, CV_8UC1, new Scalar(0.0));
 
+        UByteIndexer expectedIndexer = expectedGray.createIndexer();
+        UByteIndexer actualIndexer = actualGray.createIndexer();
         UByteIndexer deltaIndexer = grayDelta.createIndexer();
         UByteIndexer maskIndexer = mask.createIndexer();
         try {
@@ -273,12 +274,23 @@ final class OpenCvImageComparator {
                 for (int x = 0; x < cols; x += blockSize) {
                     int width = Math.min(blockSize, cols - x);
                     int height = Math.min(blockSize, rows - y);
-                    if (isSignificantBlock(deltaIndexer, x, y, width, height, effectivePixelTolerance)) {
+                    if (isSignificantBlock(
+                            expectedIndexer,
+                            actualIndexer,
+                            deltaIndexer,
+                            x,
+                            y,
+                            width,
+                            height,
+                            effectivePixelTolerance
+                    )) {
                         fillBlock(maskIndexer, x, y, width, height);
                     }
                 }
             }
         } finally {
+            expectedIndexer.release();
+            actualIndexer.release();
             deltaIndexer.release();
             maskIndexer.release();
         }
@@ -287,6 +299,8 @@ final class OpenCvImageComparator {
     }
 
     private static boolean isSignificantBlock(
+            UByteIndexer expectedIndexer,
+            UByteIndexer actualIndexer,
             UByteIndexer deltaIndexer,
             int startX,
             int startY,
@@ -294,12 +308,16 @@ final class OpenCvImageComparator {
             int height,
             int effectivePixelTolerance
     ) {
+        double expectedTotal = 0.0;
+        double actualTotal = 0.0;
         long totalDelta = 0;
         int strongPixels = 0;
         int pixels = width * height;
 
         for (int y = startY; y < startY + height; y++) {
             for (int x = startX; x < startX + width; x++) {
+                expectedTotal += expectedIndexer.get(y, x);
+                actualTotal += actualIndexer.get(y, x);
                 int value = deltaIndexer.get(y, x);
                 totalDelta += value;
                 if (value >= effectivePixelTolerance) {
@@ -308,9 +326,34 @@ final class OpenCvImageComparator {
             }
         }
 
+        double expectedMean = expectedTotal / pixels;
+        double actualMean = actualTotal / pixels;
+        double expectedVariance = 0.0;
+        double actualVariance = 0.0;
+        double covariance = 0.0;
+
+        for (int y = startY; y < startY + height; y++) {
+            for (int x = startX; x < startX + width; x++) {
+                double expected = expectedIndexer.get(y, x) - expectedMean;
+                double actual = actualIndexer.get(y, x) - actualMean;
+                expectedVariance += expected * expected;
+                actualVariance += actual * actual;
+                covariance += expected * actual;
+            }
+        }
+
+        expectedVariance /= pixels;
+        actualVariance /= pixels;
+        covariance /= pixels;
+
+        double c1 = 6.5025;
+        double c2 = 58.5225;
+        double ssim = ((2.0 * expectedMean * actualMean + c1) * (2.0 * covariance + c2))
+                / ((expectedMean * expectedMean + actualMean * actualMean + c1)
+                * (expectedVariance + actualVariance + c2));
         double averageDelta = totalDelta / (double) pixels;
         double strongRatio = strongPixels / (double) pixels;
-        return averageDelta >= 10.0 && strongRatio >= 0.10;
+        return ssim <= 0.72 && averageDelta >= 10.0 && strongRatio >= 0.06;
     }
 
     private static void fillBlock(UByteIndexer maskIndexer, int startX, int startY, int width, int height) {
@@ -331,6 +374,12 @@ final class OpenCvImageComparator {
         Mat blurred = new Mat();
         GaussianBlur(image, blurred, new Size(5, 5), 0.0);
         return blurred;
+    }
+
+    private static Mat toGray(Mat image) {
+        Mat gray = new Mat();
+        cvtColor(image, gray, COLOR_BGR2GRAY);
+        return gray;
     }
 
     private static void writeDiffImage(Mat actual, Mat mask, Path diffPath) {
