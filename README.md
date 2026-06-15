@@ -22,31 +22,33 @@ La libreria riceve immagini prodotte dal progetto chiamante e restituisce risult
 Directory baseline supportate:
 
 ```text
-visual_img
-resources/test/visual_img
-src/test/resources/visual_img
+cv_img
+resources/test/cv_img
+Resources/test/cv_img
+src/test/resources/cv_img
 ```
 
 Nel progetto E2E la posizione consigliata e':
 
 ```text
-src/test/resources/visual_img
+resources/test/cv_img
 ```
 
 Esempio:
 
 ```text
-src/test/resources/visual_img/checkout-summary.png
+resources/test/cv_img/checkout-summary.png
 ```
 
 La chiave `checkout-summary` risolve automaticamente:
 
 ```text
-visual_img/checkout-summary.png
-visual_img/checkout-summary.jpg
-visual_img/checkout-summary.jpeg
-resources/test/visual_img/checkout-summary.png
-src/test/resources/visual_img/checkout-summary.png
+cv_img/checkout-summary.png
+cv_img/checkout-summary.jpg
+cv_img/checkout-summary.jpeg
+resources/test/cv_img/checkout-summary.png
+Resources/test/cv_img/checkout-summary.png
+src/test/resources/cv_img/checkout-summary.png
 ```
 
 ## Uso Con Selenium
@@ -98,7 +100,7 @@ Assert.assertTrue(result.passed(), result.failureMessage());
 1. Selenium apre la pagina
 2. il test aspetta che la UI sia stabile
 3. Selenium produce lo screenshot
-4. opencv-visual-assert carica la baseline da visual_img
+4. opencv-visual-assert carica la baseline da cv_img
 5. OpenCV confronta baseline e screenshot
 6. il test fallisce se la differenza supera le soglie configurate
 ```

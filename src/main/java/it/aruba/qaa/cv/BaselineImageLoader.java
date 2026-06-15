@@ -27,7 +27,7 @@ final class BaselineImageLoader {
 
         throw new VisualAssertException(
                 "Baseline image not found for key or path: " + baselineKeyOrPath
-                        + ". Default baseline folder is visual_img."
+                        + ". Default baseline folder is cv_img."
         );
     }
 
@@ -59,9 +59,10 @@ final class BaselineImageLoader {
 
         for (String name : names) {
             candidates.add(name);
-            candidates.add("visual_img/" + name);
-            candidates.add("resources/test/visual_img/" + name);
-            candidates.add("src/test/resources/visual_img/" + name);
+            candidates.add("cv_img/" + name);
+            candidates.add("resources/test/cv_img/" + name);
+            candidates.add("Resources/test/cv_img/" + name);
+            candidates.add("src/test/resources/cv_img/" + name);
         }
 
         return candidates;
