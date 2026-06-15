@@ -69,15 +69,19 @@ final class OpenCvImageComparator {
         long comparedPixels = Math.max(0, (long) expected.getWidth() * expected.getHeight() - ignoredPixels);
         long diffPixels = countMaskPixels(mask);
         double diffPercent = comparedPixels == 0 ? 0.0 : diffPixels * 100.0 / comparedPixels;
-        boolean passed = diffPixels <= options.maxDiffPixels() || diffPercent <= options.maxDiffPercent();
+        VisualCompareStatus status = evaluateStatus(diffPixels, diffPercent, options);
+        boolean passed = status != VisualCompareStatus.FAILED;
 
-        if (passed && diffPixels > 0) {
+        if (status == VisualCompareStatus.PASSED && diffPixels > 0) {
             note += (note.isBlank() ? "" : " ")
-                    + "Detected differences are within configured threshold.";
+                    + "Detected differences are safely within configured threshold.";
+        } else if (status == VisualCompareStatus.WARNING) {
+            note += (note.isBlank() ? "" : " ")
+                    + "Detected differences are close to configured threshold.";
         }
 
         if (options.writeDiffImage()) {
-            writeDiffImage(actual, mask, diffPath, passed);
+            writeDiffImage(actual, mask, diffPath, status);
         }
 
         if (options.writeHtmlReport()) {
@@ -89,7 +93,7 @@ final class OpenCvImageComparator {
                     diffPixels,
                     comparedPixels,
                     diffPercent,
-                    passed,
+                    status,
                     options,
                     effectivePixelTolerance,
                     note
@@ -105,11 +109,67 @@ final class OpenCvImageComparator {
                 optionalPath(options.writeActualImage(), actualPath),
                 optionalPath(options.writeDiffImage(), diffPath),
                 optionalPath(options.writeHtmlReport(), reportPath),
+                status,
                 (note.isBlank() ? "" : note + " ")
                         + "Allowed maxDiffPercent=" + options.maxDiffPercent()
                         + ", maxDiffPixels=" + options.maxDiffPixels()
+                        + ", warningThresholdRatio=" + options.warningThresholdRatio()
+                        + ", failureThresholdMultiplier=" + options.failureThresholdMultiplier()
                         + ", pixelTolerance=" + effectivePixelTolerance
         );
+    }
+
+    private static VisualCompareStatus evaluateStatus(
+            long diffPixels,
+            double diffPercent,
+            VisualCompareOptions options
+    ) {
+        if (diffPixels == 0) {
+            return VisualCompareStatus.PASSED;
+        }
+
+        VisualCompareStatus status = VisualCompareStatus.FAILED;
+        boolean hasThreshold = false;
+
+        if (options.maxDiffPercent() > 0.0) {
+            status = leastSevere(status, evaluateMetric(diffPercent, options.maxDiffPercent(), options));
+            hasThreshold = true;
+        }
+
+        if (options.maxDiffPixels() > 0) {
+            status = leastSevere(status, evaluateMetric(diffPixels, options.maxDiffPixels(), options));
+            hasThreshold = true;
+        }
+
+        return hasThreshold ? status : VisualCompareStatus.FAILED;
+    }
+
+    private static VisualCompareStatus evaluateMetric(
+            double value,
+            double threshold,
+            VisualCompareOptions options
+    ) {
+        if (value <= threshold * options.warningThresholdRatio()) {
+            return VisualCompareStatus.PASSED;
+        }
+
+        if (value <= threshold * options.failureThresholdMultiplier()) {
+            return VisualCompareStatus.WARNING;
+        }
+
+        return VisualCompareStatus.FAILED;
+    }
+
+    private static VisualCompareStatus leastSevere(VisualCompareStatus current, VisualCompareStatus candidate) {
+        return severity(candidate) < severity(current) ? candidate : current;
+    }
+
+    private static int severity(VisualCompareStatus status) {
+        return switch (status) {
+            case PASSED -> 0;
+            case WARNING -> 1;
+            case FAILED -> 2;
+        };
     }
 
     static BufferedImage decodeImage(byte[] imageBytes, String imageName) {
@@ -386,7 +446,7 @@ final class OpenCvImageComparator {
         return (int) Math.round(0.2126 * red + 0.7152 * green + 0.0722 * blue);
     }
 
-    private static void writeDiffImage(BufferedImage actual, boolean[][] mask, Path diffPath, boolean passed) {
+    private static void writeDiffImage(BufferedImage actual, boolean[][] mask, Path diffPath, VisualCompareStatus status) {
         BufferedImage diff = new BufferedImage(actual.getWidth(), actual.getHeight(), BufferedImage.TYPE_INT_RGB);
         Graphics2D graphics = diff.createGraphics();
         try {
@@ -399,9 +459,13 @@ final class OpenCvImageComparator {
             for (int x = 0; x < diff.getWidth(); x++) {
                 if (mask[y][x]) {
                     int rgb = diff.getRGB(x, y);
-                    int red = passed ? Math.max(180, (rgb >> 16) & 0xff) : Math.max(190, (rgb >> 16) & 0xff);
-                    int green = passed ? Math.max(140, ((rgb >> 8) & 0xff) / 2) : ((rgb >> 8) & 0xff) / 4;
-                    int blue = passed ? (rgb & 0xff) / 5 : (rgb & 0xff) / 4;
+                    int red = status == VisualCompareStatus.FAILED
+                            ? Math.max(190, (rgb >> 16) & 0xff)
+                            : Math.max(180, (rgb >> 16) & 0xff);
+                    int green = status == VisualCompareStatus.FAILED
+                            ? ((rgb >> 8) & 0xff) / 4
+                            : Math.max(140, ((rgb >> 8) & 0xff) / 2);
+                    int blue = status == VisualCompareStatus.FAILED ? (rgb & 0xff) / 4 : (rgb & 0xff) / 5;
                     diff.setRGB(x, y, new Color(red, green, blue).getRGB());
                 }
             }
@@ -418,7 +482,7 @@ final class OpenCvImageComparator {
             long diffPixels,
             long comparedPixels,
             double diffPercent,
-            boolean passed,
+            VisualCompareStatus status,
             VisualCompareOptions options,
             int effectivePixelTolerance,
             String note
@@ -462,8 +526,8 @@ final class OpenCvImageComparator {
                 </body>
                 </html>
                 """.formatted(
-                passed ? "#047857" : "#b91c1c",
-                passed ? (diffPixels > 0 ? "PASSED - TOLERATED DIFFERENCES" : "PASSED") : "FAILED",
+                statusColor(status),
+                statusLabel(status, diffPixels),
                 escape(options.artifactName()),
                 diffPixels,
                 comparedPixels,
@@ -473,7 +537,7 @@ final class OpenCvImageComparator {
                 escape(note),
                 imageFigure("Baseline", expectedPath),
                 imageFigure("Actual", actualPath),
-                imageFigure(passed ? "Tolerated diff" : "Diff", diffPath)
+                imageFigure(status == VisualCompareStatus.FAILED ? "Diff" : "Accepted diff", diffPath)
         );
 
         try {
@@ -482,6 +546,22 @@ final class OpenCvImageComparator {
         } catch (IOException e) {
             throw new VisualAssertException("Unable to write visual report: " + reportPath, e);
         }
+    }
+
+    private static String statusColor(VisualCompareStatus status) {
+        return switch (status) {
+            case PASSED -> "#047857";
+            case WARNING -> "#b45309";
+            case FAILED -> "#b91c1c";
+        };
+    }
+
+    private static String statusLabel(VisualCompareStatus status, long diffPixels) {
+        return switch (status) {
+            case PASSED -> diffPixels > 0 ? "PASSED - MINIMAL DIFFERENCES" : "PASSED";
+            case WARNING -> "WARNING - NEAR THRESHOLD";
+            case FAILED -> "FAILED";
+        };
     }
 
     private static String imageFigure(String title, Optional<Path> path) {

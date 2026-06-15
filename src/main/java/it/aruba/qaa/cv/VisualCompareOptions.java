@@ -12,6 +12,8 @@ public final class VisualCompareOptions {
     private final Path outputDirectory;
     private final double maxDiffPercent;
     private final long maxDiffPixels;
+    private final double warningThresholdRatio;
+    private final double failureThresholdMultiplier;
     private final int pixelTolerance;
     private final boolean writeActualImage;
     private final boolean writeDiffImage;
@@ -24,6 +26,8 @@ public final class VisualCompareOptions {
         this.outputDirectory = builder.outputDirectory;
         this.maxDiffPercent = builder.maxDiffPercent;
         this.maxDiffPixels = builder.maxDiffPixels;
+        this.warningThresholdRatio = builder.warningThresholdRatio;
+        this.failureThresholdMultiplier = builder.failureThresholdMultiplier;
         this.pixelTolerance = builder.pixelTolerance;
         this.writeActualImage = builder.writeActualImage;
         this.writeDiffImage = builder.writeDiffImage;
@@ -50,6 +54,14 @@ public final class VisualCompareOptions {
 
     public long maxDiffPixels() {
         return maxDiffPixels;
+    }
+
+    public double warningThresholdRatio() {
+        return warningThresholdRatio;
+    }
+
+    public double failureThresholdMultiplier() {
+        return failureThresholdMultiplier;
     }
 
     public int pixelTolerance() {
@@ -81,6 +93,8 @@ public final class VisualCompareOptions {
         private Path outputDirectory = Path.of("target", "visual-assert");
         private double maxDiffPercent = 0.0;
         private long maxDiffPixels = 0;
+        private double warningThresholdRatio = 0.80;
+        private double failureThresholdMultiplier = 1.25;
         private int pixelTolerance = 0;
         private boolean writeActualImage = true;
         private boolean writeDiffImage = true;
@@ -114,6 +128,22 @@ public final class VisualCompareOptions {
                 throw new IllegalArgumentException("maxDiffPixels must be >= 0");
             }
             this.maxDiffPixels = maxDiffPixels;
+            return this;
+        }
+
+        public Builder warningThresholdRatio(double warningThresholdRatio) {
+            if (warningThresholdRatio < 0.0 || warningThresholdRatio > 1.0) {
+                throw new IllegalArgumentException("warningThresholdRatio must be between 0 and 1");
+            }
+            this.warningThresholdRatio = warningThresholdRatio;
+            return this;
+        }
+
+        public Builder failureThresholdMultiplier(double failureThresholdMultiplier) {
+            if (failureThresholdMultiplier < 1.0) {
+                throw new IllegalArgumentException("failureThresholdMultiplier must be >= 1");
+            }
+            this.failureThresholdMultiplier = failureThresholdMultiplier;
             return this;
         }
 

@@ -75,6 +75,12 @@ if (!result.passed()) {
 }
 ```
 
+`passed()` torna `true` sia per `PASSED` sia per `WARNING`. Lo stato completo e' disponibile con:
+
+```java
+result.status();
+```
+
 Per salvare una baseline:
 
 ```java
@@ -124,7 +130,7 @@ Artifact:
 
 Il progetto chiamante gestisce `passed()`, `failureMessage()` e i path degli artifact.
 
-Il file `*-diff.png` evidenzia le aree considerate differenti. Se il confronto passa ma ci sono differenze sotto soglia, il report indica `PASSED - TOLERATED DIFFERENCES`; se la soglia viene superata, indica `FAILED`.
+Il file `*-diff.png` evidenzia le aree considerate differenti. Il report distingue `PASSED`, `WARNING - NEAR THRESHOLD` e `FAILED`.
 
 Il path del report e' disponibile dal risultato:
 
@@ -163,6 +169,8 @@ Il template matching usa correlazione normalizzata, ricerca a passo variabile e 
 VisualCompareOptions options = VisualCompareOptions.builder()
         .artifactName("checkout-summary")
         .maxDiffPercent(0.25)
+        .warningThresholdRatio(0.80)
+        .failureThresholdMultiplier(1.25)
         .pixelTolerance(12)
         .writeHtmlReport(true)
         .build();
@@ -171,3 +179,7 @@ VisualCompareOptions options = VisualCompareOptions.builder()
 `pixelTolerance` gestisce piccole variazioni colore per antialiasing, font rendering e differenze browser.
 
 `maxDiffPercent` definisce la percentuale massima di area differente ammessa.
+
+`warningThresholdRatio` definisce quando iniziare a segnalare warning rispetto alla soglia. Con `0.80`, un valore sopra l'80% della soglia entra in warning.
+
+`failureThresholdMultiplier` definisce quando il warning diventa fallimento. Con `1.25`, il test fallisce solo quando supera del 25% la soglia configurata.

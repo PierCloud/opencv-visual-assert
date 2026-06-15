@@ -12,8 +12,40 @@ public record VisualCompareResult(
         Optional<Path> actualImage,
         Optional<Path> diffImage,
         Optional<Path> htmlReport,
+        VisualCompareStatus status,
         String message
 ) {
+
+    public VisualCompareResult {
+        if (status == null) {
+            status = passed ? VisualCompareStatus.PASSED : VisualCompareStatus.FAILED;
+        }
+    }
+
+    public VisualCompareResult(
+            boolean passed,
+            long diffPixels,
+            long comparedPixels,
+            double diffPercent,
+            Path expectedImage,
+            Optional<Path> actualImage,
+            Optional<Path> diffImage,
+            Optional<Path> htmlReport,
+            String message
+    ) {
+        this(
+                passed,
+                diffPixels,
+                comparedPixels,
+                diffPercent,
+                expectedImage,
+                actualImage,
+                diffImage,
+                htmlReport,
+                passed ? VisualCompareStatus.PASSED : VisualCompareStatus.FAILED,
+                message
+        );
+    }
 
     public VisualCompareResult(
             boolean passed,
@@ -30,7 +62,7 @@ public record VisualCompareResult(
 
     public String failureMessage() {
         if (passed) {
-            return "Visual comparison passed: " + message;
+            return "Visual comparison " + status + ": " + message;
         }
 
         return "Visual comparison failed: " + message
