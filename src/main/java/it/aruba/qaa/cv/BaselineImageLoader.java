@@ -2,10 +2,10 @@ package it.aruba.qaa.cv;
 
 import java.io.IOException;
 import java.io.InputStream;
-import java.util.ArrayList;
-import java.util.List;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.util.ArrayList;
+import java.util.List;
 
 final class BaselineImageLoader {
 
@@ -57,6 +57,10 @@ final class BaselineImageLoader {
         List<String> names = fileNameCandidates(normalized);
         List<String> candidates = new ArrayList<>();
 
+        if (looksLikePath(normalized)) {
+            candidates.addAll(names);
+        }
+
         for (String name : names) {
             candidates.add("test/cv_img/" + name);
         }
@@ -75,6 +79,10 @@ final class BaselineImageLoader {
     private static boolean hasImageExtension(String key) {
         String value = key.toLowerCase();
         return value.endsWith(".png") || value.endsWith(".jpg") || value.endsWith(".jpeg");
+    }
+
+    private static boolean looksLikePath(String key) {
+        return key.contains("/") || Path.of(key).isAbsolute();
     }
 
     record LoadedImage(byte[] bytes, Path displayPath) {

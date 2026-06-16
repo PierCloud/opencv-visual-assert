@@ -24,7 +24,7 @@ La libreria non dichiara dipendenze esterne.
 Nel progetto E2E la baseline deve trovarsi sotto:
 
 ```text
-resources/test/cv_img
+src/test/resources/test/cv_img
 ```
 
 La chiave `checkout-summary` risolve automaticamente:
@@ -67,6 +67,17 @@ if (!result.passed()) {
 }
 ```
 
+Per il caso comune con solo pixel tolerance e soglia percentuale:
+
+```java
+VisualCompareResult result = VisualAssert.compare(
+        screenshotBytes,
+        "checkout-summary",
+        32,
+        0.25
+);
+```
+
 `passed()` torna `true` per `PASSED` e `WARNING`; torna `false` solo per `FAILED`.
 
 Lo stato completo e' disponibile con:
@@ -84,6 +95,18 @@ import it.aruba.qaa.cv.VisualAssertUtil;
 
 byte[] screenshotBytes = captureScreenshotBytes();
 VisualAssertUtil.saveBaselineScreenshot(screenshotBytes, "access-page");
+```
+
+Il salvataggio predefinito usa:
+
+```text
+src/test/resources/test/cv_img
+```
+
+L'immagine viene poi letta dal classpath come:
+
+```text
+test/cv_img/access-page.png
 ```
 
 ## Opzioni
