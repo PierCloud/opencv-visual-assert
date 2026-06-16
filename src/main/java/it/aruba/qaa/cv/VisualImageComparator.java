@@ -6,15 +6,14 @@ import java.awt.Graphics2D;
 import java.awt.RenderingHints;
 import java.awt.image.BufferedImage;
 import java.io.ByteArrayInputStream;
-import java.io.ByteArrayOutputStream;
 import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.Optional;
 
-final class OpenCvImageComparator {
+final class VisualImageComparator {
 
-    private OpenCvImageComparator() {
+    private VisualImageComparator() {
     }
 
     static VisualCompareResult compare(
@@ -97,7 +96,7 @@ final class OpenCvImageComparator {
         }
 
         if (options.writeHtmlReport()) {
-            writeHtmlReport(
+            VisualReportRenderer.write(new VisualReport(
                     reportPath,
                     optionalPath(options.writeExpectedImage(), expectedPath),
                     optionalPath(options.writeActualImage(), actualPath),
@@ -109,7 +108,7 @@ final class OpenCvImageComparator {
                     options,
                     effectivePixelTolerance,
                     note
-            );
+            ));
         }
 
         return new VisualCompareResult(
@@ -226,7 +225,7 @@ final class OpenCvImageComparator {
         return cropped;
     }
 
-    static BufferedImage decodeImage(byte[] imageBytes, String imageName) {
+    private static BufferedImage decodeImage(byte[] imageBytes, String imageName) {
         try {
             BufferedImage image = ImageIO.read(new ByteArrayInputStream(imageBytes));
             if (image == null) {
@@ -238,7 +237,7 @@ final class OpenCvImageComparator {
         }
     }
 
-    static BufferedImage normalize(BufferedImage image) {
+    private static BufferedImage normalize(BufferedImage image) {
         if (image.getType() == BufferedImage.TYPE_INT_RGB) {
             return image;
         }
@@ -528,135 +527,12 @@ final class OpenCvImageComparator {
         writePng(diff, diffPath);
     }
 
-    private static void writeHtmlReport(
-            Path reportPath,
-            Optional<Path> expectedPath,
-            Optional<Path> actualPath,
-            Optional<Path> diffPath,
-            long diffPixels,
-            long comparedPixels,
-            double diffPercent,
-            VisualCompareStatus status,
-            VisualCompareOptions options,
-            int effectivePixelTolerance,
-            String note
-    ) {
-        String html = """
-                <!doctype html>
-                <html lang="en">
-                <head>
-                    <meta charset="utf-8">
-                    <title>Visual comparison report</title>
-                    <style>
-                        body { font-family: Arial, sans-serif; margin: 24px; color: #1f2937; }
-                        h1 { margin-bottom: 8px; }
-                        .status { font-weight: 700; color: %s; }
-                        .summary { display: grid; grid-template-columns: 180px 1fr; gap: 8px 16px; margin: 16px 0 24px; }
-                        .summary dt { font-weight: 700; }
-                        .summary dd { margin: 0; font-family: Consolas, monospace; }
-                        .grid { display: grid; grid-template-columns: repeat(3, minmax(260px, 1fr)); gap: 16px; align-items: start; }
-                        figure { margin: 0; border: 1px solid #d1d5db; padding: 12px; }
-                        figcaption { font-weight: 700; margin-bottom: 8px; }
-                        img { max-width: 100%%; display: block; border: 1px solid #e5e7eb; }
-                    </style>
-                </head>
-                <body>
-                    <h1>Visual comparison report</h1>
-                    <div class="status">%s</div>
-                    <dl class="summary">
-                        <dt>Artifact</dt><dd>%s</dd>
-                        <dt>Diff pixels</dt><dd>%d</dd>
-                        <dt>Compared pixels</dt><dd>%d</dd>
-                        <dt>Diff percent</dt><dd>%.6f</dd>
-                        <dt>Max diff percent</dt><dd>%.6f</dd>
-                        <dt>Pixel tolerance</dt><dd>%d</dd>
-                        <dt>Note</dt><dd>%s</dd>
-                    </dl>
-                    <section class="grid">
-                        %s
-                        %s
-                        %s
-                    </section>
-                </body>
-                </html>
-                """.formatted(
-                statusColor(status),
-                statusLabel(status, diffPixels),
-                escape(options.artifactName()),
-                diffPixels,
-                comparedPixels,
-                diffPercent,
-                options.maxDiffPercent(),
-                effectivePixelTolerance,
-                escape(note),
-                imageFigure("Baseline", expectedPath),
-                imageFigure("Actual", actualPath),
-                imageFigure(status == VisualCompareStatus.FAILED ? "Diff" : "Accepted diff", diffPath)
-        );
-
-        try {
-            ensureOutputDirectory(reportPath.getParent());
-            Files.writeString(reportPath, html);
-        } catch (IOException e) {
-            throw new VisualAssertException("Unable to write visual report: " + reportPath, e);
-        }
-    }
-
-    private static String statusColor(VisualCompareStatus status) {
-        return switch (status) {
-            case PASSED -> "#047857";
-            case WARNING -> "#b45309";
-            case FAILED -> "#b91c1c";
-        };
-    }
-
-    private static String statusLabel(VisualCompareStatus status, long diffPixels) {
-        return switch (status) {
-            case PASSED -> diffPixels > 0 ? "PASSED - MINIMAL DIFFERENCES" : "PASSED";
-            case WARNING -> "WARNING - NEAR THRESHOLD";
-            case FAILED -> "FAILED";
-        };
-    }
-
-    private static String imageFigure(String title, Optional<Path> path) {
-        return path.map(value -> """
-                <figure>
-                    <figcaption>%s</figcaption>
-                    <img src="%s" alt="%s">
-                </figure>
-                """.formatted(escape(title), escape(value.getFileName().toString()), escape(title))).orElse("");
-    }
-
-    private static String escape(String value) {
-        if (value == null) {
-            return "";
-        }
-        return value
-                .replace("&", "&amp;")
-                .replace("<", "&lt;")
-                .replace(">", "&gt;")
-                .replace("\"", "&quot;");
-    }
-
     private static void writePng(BufferedImage image, Path outputPath) {
         ensureOutputDirectory(outputPath.getParent());
         try {
             ImageIO.write(image, "png", outputPath.toFile());
         } catch (IOException e) {
             throw new VisualAssertException("Unable to write image: " + outputPath, e);
-        }
-    }
-
-    static void writePngForVisionApi(BufferedImage image, Path outputPath) {
-        writePng(image, outputPath);
-    }
-
-    static byte[] encodePngForVisionApi(BufferedImage image) {
-        try (ByteArrayOutputStream output = new ByteArrayOutputStream()) {
-            ImageIO.write(image, "png", output);
-            return output.toByteArray();
-        } catch (IOException e) {
-            throw new VisualAssertException("Unable to encode image", e);
         }
     }
 

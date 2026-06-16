@@ -17,28 +17,14 @@ La libreria riceve immagini prodotte dal progetto chiamante e restituisce risult
 </dependency>
 ```
 
-## Dipendenze
-
-La libreria non dichiara dipendenze esterne. Il motore visuale usa solo API Java standard.
+La libreria non dichiara dipendenze esterne.
 
 ## Baseline
-
-Directory baseline supportata:
-
-```text
-test/cv_img
-```
 
 Nel progetto E2E la baseline deve trovarsi sotto:
 
 ```text
 resources/test/cv_img
-```
-
-Esempio:
-
-```text
-resources/test/cv_img/checkout-summary.png
 ```
 
 La chiave `checkout-summary` risolve automaticamente:
@@ -49,24 +35,30 @@ test/cv_img/checkout-summary.jpg
 test/cv_img/checkout-summary.jpeg
 ```
 
-## Uso
+## Compare
 
-Il progetto chiamante produce lo screenshot e passa alla libreria i bytes dell'immagine.
+L'unico entrypoint di confronto e':
 
 ```java
 import it.aruba.qaa.cv.VisualAssert;
 import it.aruba.qaa.cv.VisualCompareOptions;
 import it.aruba.qaa.cv.VisualCompareResult;
+import it.aruba.qaa.cv.VisualRegion;
 
 byte[] screenshotBytes = captureScreenshotBytes();
 
-VisualCompareResult result = VisualAssert.compareScreenshotBytes(
+VisualCompareResult result = VisualAssert.compare(
         screenshotBytes,
         "checkout-summary",
         VisualCompareOptions.builder()
                 .artifactName("checkout-summary")
                 .maxDiffPercent(0.25)
-                .pixelTolerance(12)
+                .warningThresholdRatio(0.80)
+                .failureThresholdMultiplier(1.25)
+                .pixelTolerance(32)
+                .compareOnlyRegion(VisualRegion.of(500, 300, 700, 420))
+                .ignoreRegion(VisualRegion.of(20, 20, 80, 40))
+                .writeHtmlReport(true)
                 .build()
 );
 
@@ -75,11 +67,15 @@ if (!result.passed()) {
 }
 ```
 
-`passed()` torna `true` sia per `PASSED` sia per `WARNING`. Lo stato completo e' disponibile con:
+`passed()` torna `true` per `PASSED` e `WARNING`; torna `false` solo per `FAILED`.
+
+Lo stato completo e' disponibile con:
 
 ```java
 result.status();
 ```
+
+## Baseline Save
 
 Per salvare una baseline:
 
@@ -87,73 +83,38 @@ Per salvare una baseline:
 import it.aruba.qaa.cv.VisualAssertUtil;
 
 byte[] screenshotBytes = captureScreenshotBytes();
-VisualAssertUtil.saveBaselineScreenshot(screenshotBytes, "access-hed-page");
+VisualAssertUtil.saveBaselineScreenshot(screenshotBytes, "access-page");
 ```
 
-Per confrontare usando le opzioni predefinite della utility:
+## Opzioni
 
 ```java
-import it.aruba.qaa.cv.VisualAssertUtil;
-import it.aruba.qaa.cv.VisualCompareResult;
-
-byte[] screenshotBytes = captureScreenshotBytes();
-VisualCompareResult result = VisualAssertUtil.compareScreenshot(screenshotBytes, "access-hed-page");
+VisualCompareOptions options = VisualCompareOptions.builder()
+        .artifactName("access-page")
+        .outputDirectory(Path.of("target", "visual-assert"))
+        .maxDiffPercent(0.25)
+        .maxDiffPixels(0)
+        .warningThresholdRatio(0.80)
+        .failureThresholdMultiplier(1.25)
+        .pixelTolerance(32)
+        .compareOnlyRegion(VisualRegion.of(500, 300, 700, 420))
+        .ignoreRegion(VisualRegion.of(10, 10, 100, 50))
+        .writeExpectedImage(true)
+        .writeActualImage(true)
+        .writeDiffImage(true)
+        .writeHtmlReport(true)
+        .build();
 ```
 
-Per confrontare solo una regione dell'immagine:
+`compareOnlyRegion` limita il confronto a una sola area dell'immagine.
 
-```java
-import it.aruba.qaa.cv.VisualRegion;
+`ignoreRegion` esclude una o piu' aree dal confronto.
 
-VisualCompareResult result = VisualAssert.compareScreenshotBytes(
-        screenshotBytes,
-        "access-hed-page",
-        VisualCompareOptions.builder()
-                .artifactName("access-hed-page-login-box")
-                .compareOnlyRegion(VisualRegion.of(500, 300, 700, 420))
-                .maxDiffPercent(0.05)
-                .pixelTolerance(12)
-                .build()
-);
-```
+Se `compareOnlyRegion` e `ignoreRegion` sono usate insieme, le coordinate di `ignoreRegion` sono relative alla regione ritagliata.
 
-`compareOnlyRegion` ritaglia baseline e actual prima del confronto. Se usata insieme a `ignoreRegion`, le coordinate di `ignoreRegion` sono relative alla regione ritagliata.
+`warningThresholdRatio` definisce quando iniziare a segnalare warning rispetto alla soglia. Con `0.80`, un valore sopra l'80% della soglia entra in warning.
 
-Per usare una chiamata completamente parametrica:
-
-```java
-import java.nio.file.Path;
-import java.util.List;
-
-VisualCompareResult result = VisualAssertUtil.compareScreenshotCustom(
-        screenshotBytes,
-        "access-hed-page",
-        "access-hed-page-login-box",
-        Path.of("target", "visual-assert"),
-        0.05,
-        0,
-        0.80,
-        1.25,
-        12,
-        VisualRegion.of(500, 300, 700, 420),
-        List.of(),
-        true,
-        true,
-        true,
-        true
-);
-```
-
-## Flusso E2E
-
-```text
-1. il progetto chiamante porta la UI nello stato da verificare
-2. il test aspetta che la UI sia stabile
-3. il progetto chiamante produce lo screenshot
-4. visual-assert carica la baseline da test/cv_img
-5. il motore visuale confronta baseline e screenshot
-6. il test fallisce se la differenza supera le soglie configurate
-```
+`failureThresholdMultiplier` definisce quando il warning diventa fallimento. Con `1.25`, il test fallisce solo quando supera del 25% la soglia configurata.
 
 ## Output
 
@@ -172,61 +133,14 @@ Artifact:
 <artifactName>-report.html
 ```
 
-Il progetto chiamante gestisce `passed()`, `failureMessage()` e i path degli artifact.
-
-Il file `*-diff.png` evidenzia le aree considerate differenti. Il report distingue `PASSED`, `WARNING - NEAR THRESHOLD` e `FAILED`.
-
 Il path del report e' disponibile dal risultato:
 
 ```java
 result.htmlReport().ifPresent(path -> System.out.println("Visual report: " + path));
 ```
 
-Il confronto normalizza le immagini, ridimensiona l'actual alla baseline quando necessario, lavora in scala di grigi, applica blur, differenza assoluta, soglia, morfologia e filtro sulle componenti isolate.
+Il report HTML viene generato usando il template:
 
-## Template Matching
-
-```java
-import it.aruba.qaa.cv.OpenCvVision;
-import it.aruba.qaa.cv.TemplateMatchOptions;
-import it.aruba.qaa.cv.TemplateMatchResult;
-
-TemplateMatchResult result = OpenCvVision.findTemplateInScreenshotBytes(
-        screenshotBytes,
-        "checkout-button-icon",
-        TemplateMatchOptions.builder()
-                .artifactName("checkout-button-icon")
-                .minScore(0.92)
-                .build()
-);
-
-if (!result.found()) {
-    throw new AssertionError(result.failureMessage());
-}
+```text
+src/main/resources/it/aruba/qaa/cv/visual-report-template.html
 ```
-
-Il template matching usa correlazione normalizzata, ricerca a passo variabile e raffinamento locale del punto migliore.
-
-## Soglie
-
-```java
-VisualCompareOptions options = VisualCompareOptions.builder()
-        .artifactName("checkout-summary")
-        .compareOnlyRegion(VisualRegion.of(500, 300, 700, 420))
-        .maxDiffPercent(0.25)
-        .warningThresholdRatio(0.80)
-        .failureThresholdMultiplier(1.25)
-        .pixelTolerance(12)
-        .writeHtmlReport(true)
-        .build();
-```
-
-`pixelTolerance` gestisce piccole variazioni colore per antialiasing, font rendering e differenze browser.
-
-`maxDiffPercent` definisce la percentuale massima di area differente ammessa.
-
-`compareOnlyRegion` limita il confronto a una sola area dell'immagine.
-
-`warningThresholdRatio` definisce quando iniziare a segnalare warning rispetto alla soglia. Con `0.80`, un valore sopra l'80% della soglia entra in warning.
-
-`failureThresholdMultiplier` definisce quando il warning diventa fallimento. Con `1.25`, il test fallisce solo quando supera del 25% la soglia configurata.

@@ -1,0 +1,35 @@
+<!doctype html>
+<html lang="en">
+<head>
+    <meta charset="utf-8">
+    <title>Visual comparison report</title>
+    <style>
+        body { font-family: Arial, sans-serif; margin: 24px; color: #1f2937; }
+        h1 { margin-bottom: 8px; }
+        .status { font-weight: 700; color: ${statusColor}; }
+        .summary { display: grid; grid-template-columns: 180px 1fr; gap: 8px 16px; margin: 16px 0 24px; }
+        .summary dt { font-weight: 700; }
+        .summary dd { margin: 0; font-family: Consolas, monospace; }
+        .grid { display: grid; grid-template-columns: repeat(3, minmax(260px, 1fr)); gap: 16px; align-items: start; }
+        figure { margin: 0; border: 1px solid #d1d5db; padding: 12px; }
+        figcaption { font-weight: 700; margin-bottom: 8px; }
+        img { max-width: 100%; display: block; border: 1px solid #e5e7eb; }
+    </style>
+</head>
+<body>
+<h1>Visual comparison report</h1>
+<div class="status">${statusLabel}</div>
+<dl class="summary">
+    <dt>Artifact</dt><dd>${artifactName}</dd>
+    <dt>Diff pixels</dt><dd>${diffPixels}</dd>
+    <dt>Compared pixels</dt><dd>${comparedPixels}</dd>
+    <dt>Diff percent</dt><dd>${diffPercent}</dd>
+    <dt>Max diff percent</dt><dd>${maxDiffPercent}</dd>
+    <dt>Pixel tolerance</dt><dd>${pixelTolerance}</dd>
+    <dt>Note</dt><dd>${note}</dd>
+</dl>
+<section class="grid">
+    ${figures}
+</section>
+</body>
+</html>
