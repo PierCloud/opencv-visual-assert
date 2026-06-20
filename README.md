@@ -67,7 +67,20 @@ if (!result.passed()) {
 }
 ```
 
-Configurazioni rapide disponibili:
+### Configurazioni rapide
+
+Usa questi overload quando vuoi restare sul caso standard senza costruire manualmente `VisualCompareOptions`.
+
+| Caso d'uso | Metodo |
+| --- | --- |
+| Default completo | `compare(byte[], String)` |
+| Pixel tolerance custom | `compare(byte[], String, int)` |
+| Soglia percentuale custom | `compare(byte[], String, double)` |
+| Pixel tolerance e soglia custom | `compare(byte[], String, int, double)` |
+| Soglia custom e area limitata | `compare(byte[], String, double, VisualRegion)` |
+| Pixel tolerance, soglia custom e area limitata | `compare(byte[], String, int, double, VisualRegion)` |
+
+Default completo:
 
 ```java
 VisualCompareResult result = VisualAssert.compare(
@@ -76,7 +89,7 @@ VisualCompareResult result = VisualAssert.compare(
 );
 ```
 
-Usa i default:
+Il metodo usa questi default:
 
 ```text
 pixelTolerance = 32
@@ -102,6 +115,8 @@ VisualCompareResult result = VisualAssert.compare(
         0.10
 );
 ```
+
+Il valore `0.10` significa `0.10%` di differenza massima accettata.
 
 Con pixel tolerance e soglia percentuale custom:
 
@@ -135,6 +150,26 @@ VisualCompareResult result = VisualAssert.compare(
         0.25,
         VisualRegion.of(500, 300, 700, 420)
 );
+```
+
+`VisualRegion.of(x, y, width, height)` usa coordinate pixel sull'immagine baseline.
+
+### Assert nel test
+
+Esempio tipico dentro un test E2E:
+
+```java
+VisualCompareResult result = VisualAssert.compare(
+        screenshotBytes,
+        "checkout-summary",
+        32,
+        0.25,
+        VisualRegion.of(500, 300, 700, 420)
+);
+
+assertThat(result.passed())
+        .as(result.failureMessage())
+        .isTrue();
 ```
 
 `passed()` torna `true` per `PASSED` e `WARNING`; torna `false` solo per `FAILED`.
