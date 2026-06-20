@@ -78,6 +78,18 @@ VisualCompareResult result = VisualAssert.compare(
 );
 ```
 
+Per limitare il confronto a una sola area:
+
+```java
+VisualCompareResult result = VisualAssert.compare(
+        screenshotBytes,
+        "checkout-summary",
+        32,
+        0.25,
+        VisualRegion.of(500, 300, 700, 420)
+);
+```
+
 `passed()` torna `true` per `PASSED` e `WARNING`; torna `false` solo per `FAILED`.
 
 Lo stato completo e' disponibile con:

@@ -13,15 +13,24 @@ public final class VisualAssert {
             int pixelTolerance,
             double maxDiffPercent
     ) {
-        String artifactName = ImageKey.artifactName(baselineKeyOrPath);
         return compare(
                 actualImageBytes,
                 baselineKeyOrPath,
-                VisualCompareOptions.builder()
-                        .artifactName(artifactName)
-                        .pixelTolerance(pixelTolerance)
-                        .maxDiffPercent(maxDiffPercent)
-                        .build()
+                optionsFor(baselineKeyOrPath, pixelTolerance, maxDiffPercent, null)
+        );
+    }
+
+    public static VisualCompareResult compare(
+            byte[] actualImageBytes,
+            String baselineKeyOrPath,
+            int pixelTolerance,
+            double maxDiffPercent,
+            VisualRegion compareOnlyRegion
+    ) {
+        return compare(
+                actualImageBytes,
+                baselineKeyOrPath,
+                optionsFor(baselineKeyOrPath, pixelTolerance, maxDiffPercent, compareOnlyRegion)
         );
     }
 
@@ -41,5 +50,23 @@ public final class VisualAssert {
                 baseline.displayPath(),
                 options
         );
+    }
+
+    private static VisualCompareOptions optionsFor(
+            String baselineKeyOrPath,
+            int pixelTolerance,
+            double maxDiffPercent,
+            VisualRegion compareOnlyRegion
+    ) {
+        VisualCompareOptions.Builder builder = VisualCompareOptions.builder()
+                .artifactName(ImageKey.artifactName(baselineKeyOrPath))
+                .pixelTolerance(pixelTolerance)
+                .maxDiffPercent(maxDiffPercent);
+
+        if (compareOnlyRegion != null) {
+            builder.compareOnlyRegion(compareOnlyRegion);
+        }
+
+        return builder.build();
     }
 }
