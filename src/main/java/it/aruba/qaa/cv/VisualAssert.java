@@ -4,7 +4,48 @@ import java.util.Objects;
 
 public final class VisualAssert {
 
+    private static final int DEFAULT_PIXEL_TOLERANCE = 32;
+    private static final double DEFAULT_MAX_DIFF_PERCENT = 0.25;
+
     private VisualAssert() {
+    }
+
+    public static VisualCompareResult compare(
+            byte[] actualImageBytes,
+            String baselineKeyOrPath
+    ) {
+        return compare(actualImageBytes, baselineKeyOrPath, DEFAULT_PIXEL_TOLERANCE, DEFAULT_MAX_DIFF_PERCENT);
+    }
+
+    public static VisualCompareResult compare(
+            byte[] actualImageBytes,
+            String baselineKeyOrPath,
+            int pixelTolerance
+    ) {
+        return compare(actualImageBytes, baselineKeyOrPath, pixelTolerance, DEFAULT_MAX_DIFF_PERCENT);
+    }
+
+    public static VisualCompareResult compare(
+            byte[] actualImageBytes,
+            String baselineKeyOrPath,
+            double maxDiffPercent
+    ) {
+        return compare(actualImageBytes, baselineKeyOrPath, DEFAULT_PIXEL_TOLERANCE, maxDiffPercent);
+    }
+
+    public static VisualCompareResult compare(
+            byte[] actualImageBytes,
+            String baselineKeyOrPath,
+            double maxDiffPercent,
+            VisualRegion compareOnlyRegion
+    ) {
+        return compare(
+                actualImageBytes,
+                baselineKeyOrPath,
+                DEFAULT_PIXEL_TOLERANCE,
+                maxDiffPercent,
+                compareOnlyRegion
+        );
     }
 
     public static VisualCompareResult compare(

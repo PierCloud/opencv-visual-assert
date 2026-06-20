@@ -67,7 +67,43 @@ if (!result.passed()) {
 }
 ```
 
-Per il caso comune con solo pixel tolerance e soglia percentuale:
+Configurazioni rapide disponibili:
+
+```java
+VisualCompareResult result = VisualAssert.compare(
+        screenshotBytes,
+        "checkout-summary"
+);
+```
+
+Usa i default:
+
+```text
+pixelTolerance = 32
+maxDiffPercent = 0.25
+```
+
+Con pixel tolerance custom e soglia default:
+
+```java
+VisualCompareResult result = VisualAssert.compare(
+        screenshotBytes,
+        "checkout-summary",
+        24
+);
+```
+
+Con soglia percentuale custom e pixel tolerance default:
+
+```java
+VisualCompareResult result = VisualAssert.compare(
+        screenshotBytes,
+        "checkout-summary",
+        0.10
+);
+```
+
+Con pixel tolerance e soglia percentuale custom:
 
 ```java
 VisualCompareResult result = VisualAssert.compare(
@@ -78,7 +114,18 @@ VisualCompareResult result = VisualAssert.compare(
 );
 ```
 
-Per limitare il confronto a una sola area:
+Con soglia custom e area limitata usando pixel tolerance default:
+
+```java
+VisualCompareResult result = VisualAssert.compare(
+        screenshotBytes,
+        "checkout-summary",
+        0.25,
+        VisualRegion.of(500, 300, 700, 420)
+);
+```
+
+Con pixel tolerance, soglia custom e area limitata:
 
 ```java
 VisualCompareResult result = VisualAssert.compare(
